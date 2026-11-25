@@ -58,7 +58,21 @@ pub(crate) extern "system" fn set_interval(
         0 => SIXTIETH,
         us => Duration::from_micros(u64::from(us)),
     };
-    tracing::info!(?interval, "frame interval");
+    // `VICTORY_FRAME_US`: the rate the title asks for, replaced by this one
+    // (0: leave it). The title asks for 33.333 ms (30 a second) whatever
+    // the display offers, and the whole run is paced by these ticks: every
+    // calm frame of every run of 25/11 came out at 30.0 fps and 33.3 ms.
+    // Asking for 8.333 ms (120 a second) is what lets a run go past 30 when
+    // the frames themselves cost less than that.
+    static MOST_US: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    let wanted = *MOST_US.get_or_init(|| {
+        std::env::var("VICTORY_FRAME_US").ok().and_then(|v| v.trim().parse::<u32>().ok()).unwrap_or(0)
+    });
+    let interval = match wanted {
+        0 => interval,
+        us => Duration::from_micros(u64::from(us)),
+    };
+    tracing::info!(?interval, asked = length, replaced_by = wanted, "frame interval");
     // A new interval starts from now, after the last tick handed out.
     let first = LAST
         .iter()

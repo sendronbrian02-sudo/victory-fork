@@ -8194,7 +8194,44 @@ fn swap_format(format: DXGI_FORMAT) -> Option<DXGI_FORMAT> {
     })
 }
 
-const BUFFERS: u32 = 2;
+/// Back buffers of the swap chain, and whether a present may tear.
+///
+/// 2 buffers and no tearing hold the run at the display's rate: every
+/// present waits for the vertical blank (the run's calm frames were 30.0
+/// fps and 33.3 ms, whatever the frame cost, on every run of 25/11). The
+/// title's own frame cap is 120: it cannot be reached through a present
+/// that waits for the blank. 3 buffers let one present be prepared while
+/// the one before it is still shown, and `DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING`
+/// with `Present(0, ALLOW_TEARING)` lets a present go without waiting.
+///
+/// `VICTORY_SWAP_BUFFERS` (2 or 3, 3 here) and `VICTORY_TEARING` (1: ask
+/// for tearing, off by default: it shows a tear line when the card's frames
+/// are uneven, which they are).
+fn swap_buffers() -> u32 {
+    static N: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *N.get_or_init(|| {
+        std::env::var("VICTORY_SWAP_BUFFERS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .map_or(3, |n| n.clamp(2, 4))
+    })
+}
+
+/// Whether presents may tear (`VICTORY_TEARING=1`).
+fn tearing() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_TEARING").is_some_and(|v| v == "1"))
+}
+
+/// The flags of the swap chain, and of each present: tearing is asked for
+/// in both, or in neither.
+fn swap_flags() -> (DXGI_SWAP_CHAIN_FLAG, DXGI_PRESENT) {
+    if tearing() {
+        (DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING, DXGI_PRESENT_ALLOW_TEARING)
+    } else {
+        (DXGI_SWAP_CHAIN_FLAG(0), DXGI_PRESENT(0))
+    }
+}
 
 /// Maximum Xbox MPO display planes composited in one `PresentX` call.
 pub(crate) const MAX_PRESENT_PLANES: usize = 4;
@@ -8792,7 +8829,7 @@ impl Host {
             // SAFETY: no back buffer is held; every submission was waited for.
             let resized = unsafe {
                 p.swap_chain
-                    .ResizeBuffers(BUFFERS, width, height, format, DXGI_SWAP_CHAIN_FLAG(0))
+                    .ResizeBuffers(swap_buffers(), width, height, format, swap_flags().0)
             };
             match resized {
                 Ok(()) => {
@@ -8884,7 +8921,7 @@ impl Host {
                 crate::capture::save_read_back(frame, &buffer, &footprint);
             }
             crate::frame::before_present();
-            let _ = p.swap_chain.Present(0, DXGI_PRESENT(0));
+            let _ = p.swap_chain.Present(0, swap_flags().1);
             p.meter.frame(p.hwnd);
             #[cfg(feature = "diagnostics")]
             return Some(probe.is_some_and(|b| crate::capture::black(&b)));
@@ -8932,7 +8969,7 @@ impl Host {
             // SAFETY: no back buffer is held; every submission was waited for.
             let resized = unsafe {
                 p.swap_chain
-                    .ResizeBuffers(BUFFERS, width, height, format, DXGI_SWAP_CHAIN_FLAG(0))
+                    .ResizeBuffers(swap_buffers(), width, height, format, swap_flags().0)
             };
             match resized {
                 Ok(()) => (p.width, p.height, p.format) = (width, height, format),
@@ -9149,7 +9186,7 @@ impl Host {
             if let Some((buffer, footprint)) = capture {
                 crate::capture::save_read_back(frame, &buffer, &footprint);
             }
-            let _ = p.swap_chain.Present(0, DXGI_PRESENT(0));
+            let _ = p.swap_chain.Present(0, swap_flags().1);
             p.meter.frame(p.hwnd);
             #[cfg(feature = "diagnostics")]
             return Some(probe.is_some_and(|b| crate::capture::black(&b)));
@@ -9181,16 +9218,32 @@ impl Host {
                     Quality: 0,
                 },
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                BufferCount: BUFFERS,
+                BufferCount: swap_buffers(),
                 SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                Flags: swap_flags().0.0 as u32,
                 ..Default::default()
             };
             let swap_chain = factory
                 .CreateSwapChainForHwnd(&self.queue, hwnd, &desc, None, None)?
                 .cast::<IDXGISwapChain3>()?;
+            // The tearing flag a chain is made with cannot be changed
+            // later. A display or a mode that does not allow it makes the
+            // host refuse the present, which is said in the frame line; the
+            // chain itself is made either way.
+            let (flags, _) = swap_flags();
+            if flags != DXGI_SWAP_CHAIN_FLAG(0) {
+                tracing::info!("presents are asked to tear (VICTORY_TEARING=1): the host refuses one on a display that does not allow it");
+            }
             let copy = self.new_list()?;
             copy.close();
-            tracing::info!(width, height, format = format.0, "presenting to a window");
+            tracing::info!(
+                width,
+                height,
+                format = format.0,
+                buffers = swap_buffers(),
+                tearing = tearing(),
+                "presenting to a window"
+            );
             self.log_video_memory("right after the swap chain is made");
             Ok(Presenter {
                 swap_chain,
