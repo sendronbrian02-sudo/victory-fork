@@ -2944,8 +2944,23 @@ impl Shadow {
             }
             found
         };
-        const PER_THREAD: usize = 16 << 20;
-        let threads = ((to - from) / PER_THREAD).clamp(1, 8);
+        // Flamingo: a range is looked through on several threads whatever
+        // its size. The world's ranges follow the camera, so the snapshots
+        // kept (`keeps`) rarely fit them and they are compared whole: 340
+        // ranges of 22.9 MB in a frame, on one thread 100 ms of a frame of
+        // 224 ms (run of 2026-11-25, with the capture's other costs).
+        // `VICTORY_COMPARE_BYTES` sets the bytes a thread takes (64 KiB by
+        // default: 22.9 MB on all cores).
+        static PER_THREAD: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        let per_thread = *PER_THREAD.get_or_init(|| {
+            std::env::var("VICTORY_COMPARE_BYTES")
+                .ok()
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .filter(|n| *n >= 64 << 10)
+                .unwrap_or(64 << 10)
+        });
+        let most = std::thread::available_parallelism().map_or(4, |n| n.get().clamp(2, 16));
+        let threads = (to - from).div_ceil(per_thread).clamp(1, most);
         if threads == 1 {
             return scan(from, to);
         }
