@@ -133,7 +133,11 @@ pub(crate) fn place_part(device: &ID3D12Device, start: u64, len: u64) -> Result<
     Ok(Placed {
         buffer,
         heap,
-        fenced: std::sync::Arc::new(Fenced::new()),
+        fenced: {
+            let fenced = std::sync::Arc::new(Fenced::new());
+            HEAPS.lock().unwrap_or_else(|e| e.into_inner()).push(fenced.clone());
+            fenced
+        },
         gpu,
         bias: start - at,
     })
@@ -199,6 +203,11 @@ pub(crate) struct Fenced {
     /// How many times it was let go while a flight of its own was in the
     /// air: the count that says the fence was needed.
     late: std::sync::atomic::AtomicU64,
+    /// Microseconds waited in [`Fenced::let_go`] for the card.
+    waited_us: std::sync::atomic::AtomicU64,
+    /// How many times [`Fenced::let_go`] found the card already past every
+    /// submission of the heap: the case the fence made free.
+    already: std::sync::atomic::AtomicU64,
 }
 
 impl Fenced {
@@ -206,6 +215,8 @@ impl Fenced {
         Fenced {
             flights: std::sync::Mutex::new(crate::shadow::Flights::default()),
             late: std::sync::atomic::AtomicU64::new(0),
+            waited_us: std::sync::atomic::AtomicU64::new(0),
+            already: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -238,7 +249,13 @@ impl Fenced {
         // the submitting thread once the card has run that far
         // (`crate::host::fence_flight`).
         self.late.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        crate::host::fence_flight(std::mem::take(&mut *flights));
+        let started = std::time::Instant::now();
+        let waited = crate::host::fence_flight(std::mem::take(&mut *flights));
+        if waited {
+            self.waited_us.fetch_add(started.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            self.already.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
@@ -249,6 +266,25 @@ impl Drop for Fenced {
         }
     }
 }
+
+/// What the fence of placed heaps costs, in the memory line: how many
+/// waits the card was already past (the fence made them free) and the
+/// microseconds the others took.
+pub(crate) fn fence_stats() -> (u64, u64) {
+    let (mut free, mut waited) = (0, 0);
+    let mut heaps = HEAPS.lock().unwrap_or_else(|e| e.into_inner());
+    // Heaps with no buffer left are done with: dropped here, so the list
+    // does not grow with every buffer ever placed.
+    heaps.retain(|heap| std::sync::Arc::strong_count(heap) > 1);
+    for heap in heaps.iter() {
+        free += heap.already.load(std::sync::atomic::Ordering::Relaxed);
+        waited += heap.waited_us.load(std::sync::atomic::Ordering::Relaxed);
+    }
+    (free, waited / 1000)
+}
+
+/// Every heap still alive, for [`fence_stats`].
+static HEAPS: std::sync::Mutex<Vec<std::sync::Arc<Fenced>>> = std::sync::Mutex::new(Vec::new());
 
 /// Heaps let go while a flight of theirs was in the air, since the start.
 pub(crate) static PLACED_LATE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -295,6 +331,12 @@ fn say() {
         s[6],
         s[7]
     );
+    let (free, waited) = fence_stats();
+    if free + waited > 0 {
+        tracing::info!(
+            "placed heaps' fence: {free} let go with the card already past every submission of theirs (no wait), {waited} ms waited in all"
+        );
+    }
 }
 
 /// What a heap is opened on.

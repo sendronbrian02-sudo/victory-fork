@@ -3388,18 +3388,18 @@ pub(crate) fn settle_now(why: usize) {
 /// Only the signalled fence is asked for: what is read back here is title
 /// memory, which the submission wrote where the heap covers it, so no
 /// copy-back of ours is needed for it to be current.
-pub(crate) fn fence_flight(flights: crate::shadow::Flights) {
+pub(crate) fn fence_flight(flights: crate::shadow::Flights) -> bool {
     let Some(host) = host() else {
-        return;
+        return false;
     };
     let last = flights.pending().into_iter().map(|(_, _, number)| number).max();
     let Some(last) = last else {
-        return;
+        return false;
     };
     // SAFETY: the fence belongs to this host; a null event waits inline.
     let completed = unsafe { host.fence.GetCompletedValue() };
     if completed == u64::MAX || completed >= last {
-        return;
+        return false;
     }
     let started = std::time::Instant::now();
     // SAFETY: `last` was signalled on the host queue before the heap was
@@ -3409,6 +3409,7 @@ pub(crate) fn fence_flight(flights: crate::shadow::Flights) {
         fail(format_args!("could not wait for a placed heap's last flight ({error})"));
     }
     FLIGHT_WAIT_US.fetch_add(started.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+    true
 }
 
 /// Microseconds waited in [`fence_flight`] since the start.
