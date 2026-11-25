@@ -263,3 +263,81 @@ monde, 30 fps constants dans les menus (le plafond), 0 refus de detile,
    `VICTORY_AMBIENT` (la lumière indirecte remplacée par une constante, sinon
    les zones que le soleil n'atteint pas sont noires). Le second est un
    pansement d'image, mais il rend le monde regardable tout de suite.
+
+## 14. Fence par ressource, et le retour carte (25/11, après-midi)
+
+### 14.1 Ce qui a été fait : une fence par ressource
+
+Le niveau 2 de l'inplace (les tampons du jeu placés directement sur leur
+propre mémoire, sans copie) était documenté comme **incompatible** avec
+`VICTORY_LATE_WAIT` : les soumissions ne sont pas attendues, donc un tampon
+placé pouvait être lâché alors qu'une liste que la carte n'avait pas encore
+exécutée le nommait encore — et son tas partait avec elle.
+
+C'est réparé (`crates/victory-gpu/src/inplace.rs`, `struct Fenced`) :
+
+- chaque tas placé retient **les numéros de soumission** qui nomment son
+  tampon (`touch`), rempli au moment de l'envoi à la carte
+  (`host.rs`, `submit`, à côté de `note_upload_fence`) ;
+- quand le tas est lâché (`let_go`, appelé par le `Drop` du tampon), on
+  attend la **fence de la dernière soumission de ce tas seulement**
+  (`host::fence_flight`), pas la queue entière comme avant ;
+- une liste réinitialisée sans être soumise reprend sa déclaration
+  (`drop_list`), sinon le tas attendrait une soumission qui n'existe pas ;
+- `defer_refresh` n'enfile plus de `Step::Refresh` pour un tampon placé
+  (il n'y a rien à copier) : il note la plage pour la fence.
+
+**Mesure** : `VICTORY_INPLACE=2 VICTORY_LATE_WAIT=3` tourne désormais sans
+perte de device, avec **3 262 tampons titre (29 Mo) placés et utilisés en
+place** (87 fenêtres, 408 Mo, en plus). C'est la première fois que le
+niveau 2 est utilisable avec `LATE_WAIT`.
+
+**Mais** le niveau 2 reste plus lent que le niveau 1 : 29 Mo de petits
+tampons contre 408 Mo de fenêtres. 1,0 fps contre 1,9 fps sur les dix
+premières secondes de la scène, et les images calmes sont les mêmes.
+La machinerie est là ; elle ne se paie pas encore. La suite serait de
+placer les tampons de plus de 64 Ko qui sont aujourd'hui refusés, pas les
+petits.
+
+### 14.2 Le retour carte : ce que j'ai vérifié, et ce que ça a donné
+
+Le conseil relayé (« est-ce que le readback de 24 ms bloque le
+pipeline ? ») : oui, il bloque, mais il n'est pas 24 ms. Sur les runs de
+référence il fait **40 à 113 ms par image** (« copying back ») et il est
+**synchrone** : `card_back` copie ce que les shaders ont écrit, signale une
+fence, attend l'événement, puis fusionne. Rien ne peut avancer pendant ce
+temps.
+
+Le relais (`VICTORY_RELAY`) le fait déjà en différé. Deux essais :
+
+| configuration | images calmes | verdict |
+|---|---|---|
+| `VICTORY_INPLACE=1` (référence) | 30,0 fps (plafond) | — |
+| `+ VICTORY_CARD_FETCH_INFLIGHT=1` | 30,0 fps, puis 1,0-2,7 fps | **plus lent** : un compte à rebours d'une image |
+| `+ VICTORY_RELAY=2` | 30,0 fps, puis 0,5-2,7 fps | **plus lent** : les fusions se font sur le thread qui soumet |
+| `+ VICTORY_LATE_WAIT=3 + RELAY=2 + INFLIGHT=1` | 30,0 → 3,0 fps | **plus lent** |
+
+Le retour carte ne coûte donc rien quand les images calmes sont à 30 fps :
+il n'y a presque rien à ramener (0,0 Mo). Les 40-113 ms n'apparaissent que
+sur les images lourdes, et le recouvrir coûte plus qu'il ne rapporte ici.
+Je n'ai rien activé par défaut : `card_back` reste synchrone.
+
+### 14.3 Découverte au passage : le plafond réel est 30, pas 120
+
+Sur toutes les courses d'aujourd'hui, les images calmes sortent à
+**30,0 fps / 33,3 ms**, y compris sans aucun de mes changements. Le présent
+se fait avec `Present(0, DXGI_PRESENT(0))` (vsync, pas de tearing) et un
+swap chain à **2 buffers** : c'est le compositeur qui tient le rythme, pas
+nous. Quand on aura de la marge (l'image préparée en moins de 33 ms), le
+prochain gain sera de demander un swap chain à 3 buffers, ou
+`ALLOW_TEARING`, pour dépasser 30 — la limite des 120 fps visée n'est pas
+atteignable avec le présent actuel.
+
+### 14.4 Ce qu'il reste à faire
+
+1. `VICTORY_INPLACE_POOL` (#772) : placer les tampons de plus de 64 Ko que
+   le noyau refuse aujourd'hui (918 refus dans le journal de tirsos).
+2. Le plafond 30 fps (swap chain à 3 buffers / tearing).
+3. Les images lourdes : 250 ms de textures quand la carte reçoit beaucoup
+   de géométrie neuve.
+4. Vérifier à la main la manette PS5 et le retour de force.
