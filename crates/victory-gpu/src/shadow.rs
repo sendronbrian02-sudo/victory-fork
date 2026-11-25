@@ -77,6 +77,9 @@ pub(crate) struct Shadow {
     /// and the bytes from the buffer's first byte to `start` (the heap
     /// begins on a 64 KiB line; a title buffer need not).
     place: Option<(windows::Win32::Graphics::Direct3D12::ID3D12Heap, u64)>,
+    /// The heap it sits on, kept until this goes, with the fence of what
+    /// names it (`crate::inplace::Fenced`).
+    fenced: Option<std::sync::Arc<crate::inplace::Fenced>>,
     /// Tirsos: the frame (plus one) whose lists last declared shader
     /// writes here ([`Shadow::gpu_wrote_lately`]); 0 if none ever did.
     gpu_wrote: AtomicU64,
@@ -689,13 +692,28 @@ pub(crate) fn relay_fetched(number: u64) {
 /// writing: the next refresh would have put title bytes over what the
 /// second flight's shaders were writing.
 #[derive(Default)]
-struct Flights(BTreeMap<(usize, usize), (u32, u64)>);
+pub(crate) struct Flights(BTreeMap<(usize, usize), (u32, u64)>);
 
 impl Flights {
+    /// Of such a set (`crate::inplace::Fenced`): the submissions it names
+    /// that may still be in the air (`crate::host::fence_flight` waits for
+    /// exactly those).
+    pub(crate) fn pending(&self) -> Vec<(usize, usize, u64)> {
+        self.0
+            .iter()
+            .map(|(&(from, to), &(_, number))| (from, to, number))
+            .collect()
+    }
+
+    /// How many submissions it names at most (one heap's own count).
+    pub(crate) fn only_made(&self) -> usize {
+        self.0.len()
+    }
+
     /// Submission `number` declares `range`: counted once for it, however
     /// often it declares it. Index exact ranges; overlapping ranges remain
     /// independent, as before.
-    fn declare(&mut self, range: (usize, usize), number: u64) {
+    pub(crate) fn declare(&mut self, range: (usize, usize), number: u64) {
         use std::collections::btree_map::Entry;
         match self.0.entry(range) {
             Entry::Occupied(mut entry) => {
@@ -713,7 +731,7 @@ impl Flights {
 
     /// One submission that declared `ranges` (each once) is copied back:
     /// the ranges no other submission still holds, in input order.
-    fn done(&mut self, ranges: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    pub(crate) fn done(&mut self, ranges: &[(usize, usize)]) -> Vec<(usize, usize)> {
         use std::collections::btree_map::Entry;
         let mut free = Vec::new();
         for range in ranges {
@@ -2137,6 +2155,12 @@ impl Drop for Shadow {
         if self.place.is_some() {
             // Never counted with the copies (`Shadow::placed`).
             crate::inplace::gone(self.window, self.len);
+            // The heap goes only when no submission still names its buffer
+            // (`crate::inplace::Fenced`): with `VICTORY_LATE_WAIT` those
+            // lists may not have run yet.
+            if let Some(fenced) = &self.fenced {
+                fenced.let_go();
+            }
             return;
         }
         LIVE[0].fetch_sub(1, Ordering::Relaxed);
@@ -2478,7 +2502,14 @@ impl Shadow {
         *shadow.watched.get_mut() = NOT_WATCHED;
         shadow.window = window;
         shadow.place = Some((placed.heap, placed.bias));
+        shadow.fenced = Some(placed.fenced);
         shadow
+    }
+
+    /// The fence of the heap this sits on, if it is in place
+    /// (`crate::inplace::Fenced`).
+    pub(crate) fn fenced(&self) -> Option<std::sync::Arc<crate::inplace::Fenced>> {
+        self.fenced.clone()
     }
 
     /// Brings `len` bytes at `address` up to date when `list` is submitted,
@@ -2514,6 +2545,7 @@ impl Shadow {
             card: None,
             window: false,
             place: None,
+            fenced: None,
             gpu_wrote: AtomicU64::new(0),
         }
     }

@@ -2129,6 +2129,9 @@ struct Deferred {
     /// Bottom-of-pipe writes, done once the list has run: address, what,
     /// bytes.
     writes: Vec<(usize, crate::queue::Written, usize)>,
+    /// Title memory in place this list names (`crate::inplace::Fenced`):
+    /// the heap, the address and the bytes.
+    placed: Vec<(std::sync::Arc<crate::inplace::Fenced>, u64, u64)>,
     /// Textures read back (texture to buffer copies), done once the list
     /// has run: the host buffer the list copies the texels into, the title
     /// memory they go to, the bytes of a row, the rows, the title's row
@@ -2179,6 +2182,7 @@ impl Deferred {
             refreshed,
             textures,
             writes,
+            placed,
             backs,
             back_wanted,
             texture_backs,
@@ -2192,6 +2196,11 @@ impl Deferred {
         refreshed.clear();
         textures.clear();
         writes.clear();
+        // A heap let go waits on the fence of what names it, and this list
+        // no longer names it (`crate::inplace::Fenced`).
+        for (fenced, address, len) in placed.drain(..) {
+            fenced.drop_list(address, len);
+        }
         backs.clear();
         back_wanted.clear();
         texture_backs.clear();
@@ -3370,6 +3379,40 @@ pub(crate) fn settle_now(why: usize) {
     let mut submitted = host.submitted.lock().unwrap_or_else(|e| e.into_inner());
     host.settle(&mut submitted, why);
 }
+
+/// Submission `number` names title memory placed as a heap of its own
+/// (`crate::inplace::Fenced`): the heap is let go once the card has run
+/// every submission up to `number` that its own lists named, which a wait
+/// on the host's fence gives (`crate::inplace::Fenced::let_go`).
+///
+/// Only the signalled fence is asked for: what is read back here is title
+/// memory, which the submission wrote where the heap covers it, so no
+/// copy-back of ours is needed for it to be current.
+pub(crate) fn fence_flight(flights: crate::shadow::Flights) {
+    let Some(host) = host() else {
+        return;
+    };
+    let last = flights.pending().into_iter().map(|(_, _, number)| number).max();
+    let Some(last) = last else {
+        return;
+    };
+    // SAFETY: the fence belongs to this host; a null event waits inline.
+    let completed = unsafe { host.fence.GetCompletedValue() };
+    if completed == u64::MAX || completed >= last {
+        return;
+    }
+    let started = std::time::Instant::now();
+    // SAFETY: `last` was signalled on the host queue before the heap was
+    // let go, so it is reached.
+    let waited = unsafe { host.fence.SetEventOnCompletion(last, HANDLE::default()) };
+    if let Err(error) = waited {
+        fail(format_args!("could not wait for a placed heap's last flight ({error})"));
+    }
+    FLIGHT_WAIT_US.fetch_add(started.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Microseconds waited in [`fence_flight`] since the start.
+pub(crate) static FLIGHT_WAIT_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// [`settle_now`] at a present, and for a fence the title blocks on.
 pub(crate) fn settle_for_present() {
@@ -5875,6 +5918,14 @@ impl Host {
                     }
                 }
             }
+            // Title memory placed on the card as a heap of its own
+            // (`crate::inplace`): this submission names those buffers, so
+            // the heap may not go before the card has run this far.
+            for list in runs {
+                for (placed, address, len) in list.placed_ranges() {
+                    placed.touch(*submitted, address, len);
+                }
+            }
             let back = declared_writes(runs);
             let writes = runs.iter().flat_map(|l| l.deferred().writes.clone()).collect();
             submission_us(0, (prepared - started).saturating_sub(settled).as_micros() as u64);
@@ -6957,6 +7008,12 @@ impl HostList {
         }
     }
 
+    /// Title memory in place that this list reads or writes, for the heap's
+    /// fence (`crate::inplace::Fenced`).
+    fn placed_ranges(&self) -> Vec<(std::sync::Arc<crate::inplace::Fenced>, u64, u64)> {
+        self.deferred().placed.clone()
+    }
+
     fn deferred(&self) -> std::sync::MutexGuard<'_, Deferred> {
         self.deferred.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -7000,6 +7057,13 @@ impl HostList {
         address: usize,
         len: usize,
     ) {
+        // Title memory in place: nowhere to copy from, and a heap the card
+        // may still be reading (`crate::inplace::Fenced`).
+        if let Some(fenced) = shadow.fenced() {
+            let mut deferred = self.deferred();
+            deferred.placed.push((fenced, address as u64, len as u64));
+            return;
+        }
         let mut deferred = self.deferred();
         let key = (std::sync::Arc::as_ptr(shadow) as usize, address, len);
         if deferred.refreshed.insert(key) {

@@ -108,6 +108,8 @@ static STATS: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
 pub(crate) struct Placed {
     pub(crate) buffer: ID3D12Resource,
     pub(crate) heap: ID3D12Heap,
+    /// The submissions that name this heap's buffer (see [`Fenced`]).
+    pub(crate) fenced: std::sync::Arc<Fenced>,
     /// The host GPU address of the title memory's first byte.
     pub(crate) gpu: u64,
     /// Bytes from the buffer's first byte to the title memory's first.
@@ -128,7 +130,13 @@ pub(crate) fn place_part(device: &ID3D12Device, start: u64, len: u64) -> Result<
     let buffer = place(device, &heap, 0, bytes).map_err(Some)?;
     // SAFETY: a live buffer.
     let gpu = unsafe { buffer.GetGPUVirtualAddress() } + (start - at);
-    Ok(Placed { buffer, heap, gpu, bias: start - at })
+    Ok(Placed {
+        buffer,
+        heap,
+        fenced: std::sync::Arc::new(Fenced::new()),
+        gpu,
+        bias: start - at,
+    })
 }
 
 /// Title memory `[start, start + len)` in place, for a window outside
@@ -167,6 +175,83 @@ pub(crate) fn place_for(start: u64, len: u64, window: bool) -> Option<Placed> {
         }
     }
 }
+
+/// A heap opened on title memory, and whether a submission that still
+/// reads or writes it may be in the air: with `VICTORY_LATE_WAIT` the
+/// flights are not waited for at their submit, so a placed buffer may be
+/// used by a list the card has not run yet when it is let go, and the heap
+/// would go while that list still names it.
+///
+/// Each heap is fenced: the submissions that name a buffer placed on it
+/// are counted ([`touch`]), and before the heap is released the fence is
+/// made to stand where the last of them ended ([`wait`]), not where the
+/// whole queue ended as before. A heap no flight mentions is released at
+/// once.
+///
+/// shortcut: this is per heap, not per buffer: two buffers on one heap (a
+/// 64 KiB page holding two of them) wait for the same submissions. Splitting
+/// them needs a heap each, which the host refuses for memory it already
+/// opened beside another.
+pub(crate) struct Fenced {
+    /// Submissions this heap's buffers were last declared in, and their
+    /// count.
+    flights: std::sync::Mutex<crate::shadow::Flights>,
+    /// How many times it was let go while a flight of its own was in the
+    /// air: the count that says the fence was needed.
+    late: std::sync::atomic::AtomicU64,
+}
+
+impl Fenced {
+    pub(crate) fn new() -> Fenced {
+        Fenced {
+            flights: std::sync::Mutex::new(crate::shadow::Flights::default()),
+            late: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// Submission `number` names a buffer on this heap, reading or writing
+    /// `[address, address + len)` of title memory.
+    pub(crate) fn touch(&self, number: u64, address: u64, len: u64) {
+        self.flights
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .declare((address as usize, (address + len) as usize), number);
+    }
+
+    /// A list that named it was reset without being submitted: nothing of
+    /// it goes to the card, so it no longer counts.
+    pub(crate) fn drop_list(&self, address: u64, len: u64) {
+        let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
+        flights.done(&[(address as usize, (address + len) as usize)]);
+    }
+
+    /// The heap is let go: past this point its buffer is named by no list
+    /// made now, and by none the card has not run only if the fence stands
+    /// where they ended.
+    pub(crate) fn let_go(&self) {
+        let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
+        if flights.only_made() == 0 {
+            // No submission names it: nothing to wait for.
+            return;
+        }
+        // A submission in the air that names it: the heap is released on
+        // the submitting thread once the card has run that far
+        // (`crate::host::fence_flight`).
+        self.late.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        crate::host::fence_flight(std::mem::take(&mut *flights));
+    }
+}
+
+impl Drop for Fenced {
+    fn drop(&mut self) {
+        if self.late.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+            PLACED_LATE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// Heaps let go while a flight of theirs was in the air, since the start.
+pub(crate) static PLACED_LATE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// What [`place_for`] gave is gone.
 pub(crate) fn gone(window: bool, bytes: u64) {
