@@ -1755,6 +1755,10 @@ impl State {
         let ranges = heaps
             .entry(std::ptr::from_ref(host) as usize)
             .or_insert_with(|| Picked::new(crate::heap_pass::full_pass()));
+        // The last span each host copy was given: a copy whose span did not
+        // move has the bytes it had (see the refresh below).
+        static SPANS: std::sync::Mutex<Option<std::collections::HashMap<usize, (u64, u64)>>> =
+            std::sync::Mutex::new(None);
         let changed = host.buffer_changes();
         let record = |index: u32| heap.handle(index).map(crate::descriptor::record_at);
         let slots = ranges.plan(
@@ -1830,7 +1834,23 @@ impl State {
         static WHOLE: std::sync::Mutex<Option<std::collections::HashMap<usize, u64>>> = std::sync::Mutex::new(None);
         let mut whole = WHOLE.lock().unwrap_or_else(|e| e.into_inner());
         let whole = whole.get_or_insert_with(Default::default);
+        // Copies whose span did not move since their last refresh keep what
+        // they hold: nothing new was read into them. In the world this pass
+        // asked for 4,000 copies of 12,000 slots a frame (15 ms) and most
+        // of them covered exactly the bytes of the frame before; a copy
+        // whose bytes the title changed is asked for by the write watch
+        // (`Shadow::update`), not by this pass. `VICTORY_PICKED_SPANS=0`
+        // asks for every copy every pass, as before.
+        let skip_unmoved = std::env::var_os("VICTORY_PICKED_SPANS").is_none_or(|v| v != "0");
+        let mut moved: std::collections::HashMap<usize, (u64, u64)> = std::collections::HashMap::new();
+        let mut last = SPANS.lock().unwrap_or_else(|e| e.into_inner());
+        let last = last.get_or_insert_with(Default::default);
         for (shadow, from, to) in &spans {
+            let key = shadow.id() as usize;
+            moved.insert(key, (*from, *to));
+            if skip_unmoved && last.get(&key) == Some(&(*from, *to)) {
+                continue;
+            }
             if shadow.unwatched() {
                 // By the copy's number: a copy made where one let go was
                 // (`shadow::let_go_idle`) has never been refreshed.
@@ -1852,6 +1872,8 @@ impl State {
             }
             shadow.refresh(list, *from, to - from);
         }
+        *last = moved;
+        drop(last);
         let refreshed = started.elapsed();
         self.heap_textures(list, heap, host);
         let all = started.elapsed();

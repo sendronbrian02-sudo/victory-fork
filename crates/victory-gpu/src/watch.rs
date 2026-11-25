@@ -1806,16 +1806,32 @@ pub(crate) fn try_copy(dst: *mut u8, src: *const u8, len: usize) -> bool {
     unsafe { flamingo_try_copy(dst, src, len) != 0 }
 }
 
-/// Whether `at` is committed read-write memory now.
+/// Whether `at` is committed memory now that a write may go through.
+///
+/// This is the handler of a write that the copy in place met: a page the
+/// title has but that is not plain read-write. `PAGE_READWRITE` alone sent
+/// those back to the kernel, page by page: in the world that was most of the
+/// copies (`copy_mapped`'s fallback), and the page-by-page walk of
+/// `read_pieces` is what a refresh of 300 ms in a frame of 663 ms was made
+/// of. Guard pages and the write-watched pages are left out: the first are
+/// ours, the second are counted as written by the kernel only, and copying
+/// through them would lose the title's own writes from the watch.
 fn writable(at: usize) -> bool {
     use windows_sys::Win32::System::Memory::{
-        MEM_COMMIT, MEMORY_BASIC_INFORMATION, PAGE_READWRITE, VirtualQuery,
+        MEM_COMMIT, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READWRITE, PAGE_READWRITE,
+        PAGE_WRITECOPY, VirtualQuery,
     };
     // SAFETY: plain data filled in by the query.
     let mut info: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
     // SAFETY: a valid out pointer of the right size.
     let n = unsafe { VirtualQuery(at as *const _, &mut info, size_of_val(&info)) };
-    n != 0 && info.State == MEM_COMMIT && info.Protect == PAGE_READWRITE
+    if n == 0 || info.State != MEM_COMMIT {
+        return false;
+    }
+    matches!(
+        info.Protect,
+        PAGE_READWRITE | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY
+    )
 }
 
 #[cfg(test)]
