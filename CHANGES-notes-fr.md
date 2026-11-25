@@ -1,17 +1,17 @@
 # Victory-fork — notes de travail (français)
 
-## 0. Le dossier a été remplacé par flamingo (25/11)
+## 0. Le dossier a été remplacé par flamingo, renommé Tirsos (25/11)
 
 Ton `C:/Users/sendr/Desktop/victory-fork` est maintenant une copie de
 [`realblastex/flamingo`](https://github.com/realblastex/flamingo) — le fork
 le plus à jour — et non plus le mien. L'ancien dossier est gardé à côté dans
 `C:/Users/sendr/Desktop/victory-fork-backup-2228`. Branche poussée sur ton
-dépôt : `flamingo` (le `main` distant est resté l'ancien historique).
+dépôt : `tirsos` (le `main` distant est resté l'ancien historique).
 
 Les sections 1 à 10 plus bas décrivent l'ancien travail (fork de victory-fork)
 et ne s'appliquent plus au code ; elles restent pour mémoire.
 
-## 11. Ce que j'ai corrigé dans flamingo (mesuré sur ta RTX 4070)
+## 11. Ce que j'ai corrigé dans tirsos (mesuré sur ta RTX 4070)
 
 | # | Changement | Fichier | Effet mesuré |
 |---|---|---|---|
@@ -24,17 +24,17 @@ Réglage important trouvé en route : `VICTORY_EARLY_TEXTURES_MS=4` (au lieu de
 reçoit beaucoup de géométrie neuve ; à 0 c'est bien pire. C'est ce qui fait
 passer de « 1 à 4 fps » à « 4,5 à 9,6 fps ».
 
-Les trois correctifs sont des commits sur la branche `flamingo`.
+Les trois correctifs sont des commits sur la branche `tirsos`.
 
 ## 12. Ce que valent les deux conseils qu'on t'a donnés
 
-**« map shared buffers to a ReBAR WRITE_COMBINE custom heap »** — flamingo
+**« map shared buffers to a ReBAR WRITE_COMBINE custom heap »** — tirsos
 fait déjà le mapping « une seule mémoire » (`inplace.rs` : `OpenExistingHeap
 FromAddress` sur la mémoire du titre) et ses copies de lecture passent par
 `watch::try_copy` (copie directe, faute rattrapée, aucun appel noyau), pas par
 une boucle `VirtualProtect` + `memcpy`. Essayé : `VICTORY_INPLACE=1` place
 87 fenêtres (408 Mo) et 918 refus (mémoire de vue ou non privée) → **3,8-4,4
-puis 1,7 fps, aucun gain**, exactement comme le journal de flamingo l'avait
+puis 1,7 fps, aucun gain**, exactement comme le journal de tirsos l'avait
 mesuré (5,6-6,9 fps, plus des rectangles noirs). La limite n'est pas le PCIe :
 le compteur dit 84 Mo envoyés en 480 plages, et le coût est CPU (comparaison
 et copie), pas le bus.
@@ -52,13 +52,13 @@ principe de `indirect.rs` + `heap_pass.rs` ; le reste à faire est là
 1. `VICTORY_EARLY_TEXTURES_MS` : trouver le bon chiffre entre 4 et 12, et
    faire en sorte que la passe textures prenne le temps restant de l'image
    plutôt qu'un budget fixe.
-2. `VICTORY_INPLACE_POOL` (victory-fork #772, absent de flamingo) : il vise
+2. `VICTORY_INPLACE_POOL` (victory-fork #772, absent de tirsos) : il vise
    justement les 918 refus dus au pool de pages `SEC_RESERVE`.
 3. Les zones sombres : pas de ray tracing, et `VICTORY_AMBIENT` (constant)
    ne se déclenche pas ici — le programme de résolution n'a pas de nom dans
    ce build (`VICTORY_AMBIENT_PROGRAM=<nom>` pour le forcer).
-4. Manette PS5 : lecture HID faite côté victory-fork, à reporter sur flamingo
-   si le mode DualSense de flamingo ne suffit pas.
+4. Manette PS5 : lecture HID faite côté victory-fork, à reporter sur tirsos
+   si le mode DualSense de tirsos ne suffit pas.
 5. Le plafond d'images : à vérifier (120 visés) une fois qu'on tient 30+ fps.
 
 # Ce qui a changé, et ce qu'il reste à changer

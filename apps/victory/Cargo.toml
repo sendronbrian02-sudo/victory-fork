@@ -33,7 +33,7 @@ diagnostics = [
     "victory-loader/diagnostics",
     "victory-shader/diagnostics",
 ]
-# Flamingo: scheduled stack dumps (`VICTORY_STACKS`) without the rest of the
+# Tirsos: scheduled stack dumps (`VICTORY_STACKS`) without the rest of the
 # diagnostics, for a sampling profile of the build that is measured.
 stacks = ["victory-loader/stacks"]
 

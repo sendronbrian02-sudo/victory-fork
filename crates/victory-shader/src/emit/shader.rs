@@ -79,7 +79,7 @@ pub const USER_VIEW_ADDRESS: u32 = 0x101;
 /// view. Asked for every root UAV, and for the root SRVs of programs with
 /// a spilled user-data table.
 pub const USER_VIEW_BIAS: u32 = 0x103;
-/// `RootType::Other` code of a user-data dword the host computes (Flamingo, after
+/// `RootType::Other` code of a user-data dword the host computes (Tirsos, after
 /// victory-fork #814): for a `DispatchX` with `USE_THREAD_DIMENSIONS`, its thread count
 /// along axis `dword` where the last group is partial, else 0. The console runs no lane at
 /// or past it.

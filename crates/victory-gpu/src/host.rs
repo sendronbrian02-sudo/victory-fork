@@ -239,21 +239,21 @@ fn bury(finished: u64) {
     drop_aside(done.into_iter().map(|(_, r)| r).collect());
 }
 
-/// Flamingo: drops what is retired on a thread of its own. Letting a host
+/// Tirsos: drops what is retired on a thread of its own. Letting a host
 /// texture go releases its D3D12 resource, which the driver takes its time
 /// over: the sweep of idle textures (once a second, on the submitting
 /// thread) was 5.5% of that thread's samples (run 42), some 50 ms at once.
-/// `FLAMINGO_DROP_THREAD=0` drops in place, as before.
+/// `TIRSOS_DROP_THREAD=0` drops in place, as before.
 fn drop_aside(items: Vec<Retired>) {
     use std::sync::mpsc::{Sender, channel};
     static DROPS: OnceLock<Option<std::sync::Mutex<Sender<Vec<Retired>>>>> = OnceLock::new();
     let drops = DROPS.get_or_init(|| {
-        if std::env::var_os("FLAMINGO_DROP_THREAD").is_some_and(|v| v == "0") {
+        if std::env::var_os("TIRSOS_DROP_THREAD").is_some_and(|v| v == "0") {
             return None;
         }
         let (send, receive) = channel::<Vec<Retired>>();
         std::thread::Builder::new()
-            .name("flamingo-drops".into())
+            .name("tirsos-drops".into())
             .spawn(move || {
                 for items in receive {
                     drop(items);
@@ -903,7 +903,7 @@ mod tests {
     }
 }
 
-/// Flamingo: a list's chunks in the card's memory for [`HostList::card_fill`]:
+/// Tirsos: a list's chunks in the card's memory for [`HostList::card_fill`]:
 /// the one in use, how much of it is taken, and whether each was left
 /// readable as constants by the last copy into it.
 #[derive(Default)]
@@ -923,7 +923,7 @@ pub(crate) struct HostList {
     /// Upload memory for data the list's draws make (expanded vertices),
     /// reused after a reset.
     scratch: Mutex<Scratch>,
-    /// Flamingo: memory in the card's own heap that the list's copies of
+    /// Tirsos: memory in the card's own heap that the list's copies of
     /// shader-written constants go to ([`HostList::card_fill`]), reused after
     /// a reset.
     card_scratch: Mutex<CardScratch>,
@@ -2168,7 +2168,7 @@ impl Deferred {
         ALIVE[6].fetch_sub(self.uploads.len() as u64, Ordering::Relaxed);
         ALIVE[7].fetch_sub(self.upload_bytes, Ordering::Relaxed);
         // Every field by name (no `..`): one added later must be cleared
-        // here too. Flamingo's texture copy-backs were not, so every list
+        // here too. Belobug's texture copy-backs were not, so every list
         // reset kept them and the next submission did them all again (run
         // 120: 119 ms a frame waiting for the card).
         let Deferred {
@@ -7091,7 +7091,7 @@ impl HostList {
         Some((gpu + at, (data + at as usize) as *mut u8))
     }
 
-    /// Flamingo ([`crate::shadow::card_fills`]): `len` bytes of title memory
+    /// Tirsos ([`crate::shadow::card_fills`]): `len` bytes of title memory
     /// at `address`, in `shadow`'s copy, copied on the card in the list's
     /// order into memory of its own, 256-byte aligned, which a constant
     /// buffer view can name: its GPU address. For constants not 256-byte
@@ -7379,7 +7379,7 @@ impl HostList {
         #[cfg(feature = "diagnostics")]
         use crate::copystat::{C, add};
         for step in &self.deferred().copies {
-            // Flamingo: timed only where the time is used: the clock was
+            // Tirsos: timed only where the time is used: the clock was
             // 2.5% of the submitting thread (run 42), read twice for each of
             // some 35,000 steps a frame, most of them refreshes.
             let started = matches!(step, Step::Copy(..) | Step::Fill(..) | Step::Run(_) | Step::Host(_))
@@ -7908,7 +7908,7 @@ pub(crate) fn read_into(src: *const u8, dst: &mut [u8]) -> bool {
 fn read(src: *const u8, dst: *mut u8, len: usize) -> bool {
     use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
-    // Flamingo: a plain copy first; the kernel's when a page is not there.
+    // Tirsos: a plain copy first; the kernel's when a page is not there.
     if crate::watch::try_copy(dst, src, len) {
         return true;
     }
@@ -7976,7 +7976,7 @@ pub(crate) fn write_mapped(dst: *mut u8, src: *const u8, len: usize) {
     let direct = direct_writes();
     let write = |at: usize, n: usize| {
         let from = src.wrapping_add(at - dst as usize);
-        // Flamingo: a plain copy first ([`crate::watch::try_copy`]): putting
+        // Tirsos: a plain copy first ([`crate::watch::try_copy`]): putting
         // back what shaders wrote was the relay's 28.6 ms a frame (run 38),
         // much of it kernel calls.
         if crate::watch::try_copy(at as *mut u8, from, n) {
@@ -8342,7 +8342,7 @@ static FRAME_RATE: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 
 /// The last second's frames per second and draws per frame, as the window's
 /// caption shows them (zeros before the first presented second). For the
-/// Discord presence (Flamingo).
+/// Discord presence (Tirsos).
 pub fn frame_rate() -> (f64, u32) {
     (f64::from(FRAME_RATE[0].load(Ordering::Relaxed)) / 10.0, FRAME_RATE[1].load(Ordering::Relaxed))
 }
@@ -8663,7 +8663,7 @@ impl Meter {
             self.caption = Some(buffer);
         }
         let Some(caption) = &self.caption else { return };
-        let text = format!(" | Flamingo {fps:.0} fps {ms:.1} ms/frame {draws:.0} draws/frame");
+        let text = format!(" | Tirsos {fps:.0} fps {ms:.1} ms/frame {draws:.0} draws/frame");
         let mut text: Vec<u16> = caption.iter().copied().chain(text.encode_utf16()).collect();
         text.push(0);
         // Setting the text waits for the window's thread (a title thread,
@@ -9514,7 +9514,7 @@ fn make_window(width: u32, height: u32) -> windows::core::Result<HWND> {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
             CLASS,
-            w!("Flamingo"),
+            w!("Tirsos"),
             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,

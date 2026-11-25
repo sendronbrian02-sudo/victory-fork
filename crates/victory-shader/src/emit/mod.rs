@@ -859,7 +859,7 @@ fn emit_forms(
         // one lane-branch region, ordered between the two host waves only where the region
         // is entered and left (`lower::with_loose_lds`, approximate). A 32-lane host refuses
         // the 64-lane form outright, which drops every dispatch of the program.
-        // Flamingo: off by default. In run 54 the three programs it let run
+        // Tirsos: off by default. In run 54 the three programs it let run
         // made the world grainy and smeared (refused, their passes were left
         // out and the picture was clean).
         let loose_on = std::env::var_os("VICTORY_WAVE_LDS_LOOSE").is_some_and(|v| v == "1");

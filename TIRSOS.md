@@ -1,11 +1,11 @@
-# Flamingo (VIctory-family base)
+# Tirsos (VIctory-family base)
 
-The working log of Flamingo: every change on top of victory-fork, and every measured run (Series S
+The working log of Tirsos: every change on top of victory-fork, and every measured run (Series S
 profile, RTX 4070). Scratch commit ids and local paths in it are from the machine it was made on.
 
 This tree is fxceless/victory-fork (its main at `c96b4f2`: VIctory `ffe310e` plus the fork's
-world-rendering and speed work). Its author tested it on an RTX 4070 like the one this build targets. The first Flamingo was
-based on XCL (`E:\Games\Emulators\Flamingo`). On NVIDIA it stalled at the world entry and needed
+world-rendering and speed work). Its author tested it on an RTX 4070 like the one this build targets. The first Tirsos was
+based on XCL (`E:\Games\Emulators\Tirsos`). On NVIDIA it stalled at the world entry and needed
 about an hour of pipeline compiles after every translator change. This base renders the world
 instead and compiles shaders on first use. The XCL work carries over here as ideas only: XCL is
 GPL-2.0 and VIctory is GPL-3.0, so code is not copied between them.
@@ -15,13 +15,13 @@ GPL-2.0 and VIctory is GPL-3.0, so code is not copied between them.
 | Change | Source |
 |--------|--------|
 | `VICTORY_NO_WATCHDOG=1` hooks out the title's own watchdog, which ended runs during cold shader compiles | upstream VIctory PR #454 (cherry-picked) |
-| The window caption says Flamingo | Flamingo |
+| The window caption says Tirsos | Tirsos |
 | Cheaper indirect draws: the clamped-arguments buffer stays readable (no barrier per draw), one budget charge per thread group | victory-fork PR #220 (working tree) |
 | Copy-back reads scratch sized to the changed stretch; bounds scanned 32 bytes at a time | victory-fork PRs #240, #255 (working tree) |
 | The card-memory hash passes use a group per piece | victory-fork PR #253 (working tree) |
 | Queue and frame-wait fixes; sent-ahead submissions finish before detiling into their staging | victory-fork PRs #216, #281, #272 (working tree) |
-| Intro and menu flicker: a guarded texture whose memory changed in the last 90 frames is hashed at every check, not every 8th frame. The title writes its intro video and menu animation frames through views the guard does not see, so they showed stale pictures between fresh ones (victory-fork #269) | Flamingo (`victory-gpu/src/texture.rs`) |
-| Discord Rich Presence: the title's name, menus or world, the frame rate, the time played; looked at every second, sent when it changes (at most every 4 s, Discord's limit) | Flamingo (`apps/victory/src/discord.rs`) |
+| Intro and menu flicker: a guarded texture whose memory changed in the last 90 frames is hashed at every check, not every 8th frame. The title writes its intro video and menu animation frames through views the guard does not see, so they showed stale pictures between fresh ones (victory-fork #269) | Tirsos (`victory-gpu/src/texture.rs`) |
+| Discord Rich Presence: the title's name, menus or world, the frame rate, the time played; looked at every second, sent when it changes (at most every 4 s, Discord's limit) | Tirsos (`apps/victory/src/discord.rs`) |
 | Structure builder: its last three programs translate on 32-lane GPUs | victory-fork PR #294 (working tree) |
 | Wave32 shared-memory synchronisation for the visibility dispatch; merged-stage shared memory size and GS vertex bound; lane masks through joins; lane selectors wrapped at the console's wave width; wave32 pixel and vertex wave operations per 32-lane half; literal select masks in local half-waves | victory-fork PRs #368, #367, #377, #298, #318, #277 (working tree) |
 | FP16 interpolation and integer render-target pipelines; signed wave prefix and integer NaN checks in f16 conversions; refused shaders' containers saved (`VICTORY_DUMP_REFUSED`) | victory-fork PRs #280, #355, #266 (working tree) |
@@ -32,13 +32,13 @@ GPL-2.0 and VIctory is GPL-3.0, so code is not copied between them.
 | Intro movie judder: a present with no flip wait since the last one is held to its flip tick | victory-fork PR #457 (merged with #281's frame wait loop) |
 | Integer render targets get no blending (the mesh pipeline `f5e50eb2108c425b` NVIDIA refused); the heap buffer pass looks only at marked slots | victory-fork PRs #501, #467 |
 | Ray tracing on 32-lane GPUs: shadow traces and the full structure builder translate (`VICTORY_HOST_WAVE=32`), an absent child is a miss, 46 more programs | victory-fork PR #487 (bundle of #156, #213, #203; merged) |
-| The repository's asset-policy size limit is 1 MiB (the merged shader PRs grew `emit/lower.rs` past 512 KiB) | Flamingo (`xtask/src/policy.rs`) |
-| Diagnostics: `VICTORY_PARTS=1` (translate lists each container's parts), `FLAMINGO_SAVE_FAILED=<dir>` (shaders that do not translate, saved as the title gave them) | Flamingo |
+| The repository's asset-policy size limit is 1 MiB (the merged shader PRs grew `emit/lower.rs` past 512 KiB) | Tirsos (`xtask/src/policy.rs`) |
+| Diagnostics: `VICTORY_PARTS=1` (translate lists each container's parts), `TIRSOS_SAVE_FAILED=<dir>` (shaders that do not translate, saved as the title gave them) | Tirsos |
 | Speed and safety: AVX2 relay merge, texture refreshes do not wait for remaps, pipeline wakeups isolated, BVH sorted hits, watch monotonicity, detile bounds, descriptor and DirectStorage reference fixes, subobject bounds | victory-fork PRs #384, #393, #398, #414, #410, #408, #405, #403, #409 (working tree) |
 
-How this tree is put together: the scratch branch `flamingo-wip` (a worktree in the session's
+How this tree is put together: the scratch branch `tirsos-wip` (a worktree in the session's
 scratch folder) holds one local commit per PR, applied with three-way merges in the order above,
-plus Flamingo's own edits and the fields the stacked PRs need in each other's code. Its files are
+plus Belobug's own edits and the fields the stacked PRs need in each other's code. Its files are
 copied into this tree as uncommitted changes. Since run 32 the branch is rebased onto fork main
 `c96b4f2`. Whole suite on that tree: 606 passed, 0 failed, 10 ignored.
 
@@ -59,7 +59,7 @@ VICTORY_WIDE_MERGE=1                 # fetched pieces merged on several threads 
 target\diag\victory.exe run <your dump>\<the title's executable> --execute
 ```
 
-`E:\Games\Emulators\Play Flamingo.bat` starts the title with these settings (no scripted keys: play with a pad or the
+`E:\Games\Emulators\Play Tirsos.bat` starts the title with these settings (no scripted keys: play with a pad or the
 keyboard).
 
 The title cannot reach the network under VIctory: it runs offline by design.
@@ -91,27 +91,27 @@ TdrDelay raised to 60 s. Here TdrDelay is the default 2 s. Keep test runs short.
 | 25 | Series S, + #501, #467 | steady 8.5-10.4 fps (102 ms): preparing 68 ms, copy-back 62 ms, GPU 15 ms |
 | 26 | + #457, #487 (RT bundle), `VICTORY_BVH_BUILDER=1 VICTORY_HOST_WAVE=32` | the builder runs and the title crashes at `+0x27c195d` as in run 13: off |
 | 27-28 | builder off; + #513 | 9.6-9.9 fps; untranslated 8 |
-| 29-30 | Flamingo's cold write-watch skip (`FLAMINGO_COLD_ASKS`) | left out 168 of ~2,600 askings a frame, no measurable gain (an asking costs its call, 7 microseconds): off by default |
+| 29-30 | Belobug's cold write-watch skip (`TIRSOS_COLD_ASKS`) | left out 168 of ~2,600 askings a frame, no measurable gain (an asking costs its call, 7 microseconds): off by default |
 | 31 | + `VICTORY_WINDOW_KB=1024 VICTORY_WINDOW_TAILS=1 VICTORY_INPLACE=1` (fork #580) | 8.1-9.4 fps, 19.2 GB working set: not used |
 | 32 | the whole stack rebased onto fork main `c96b4f2` (#397 left out: NVIDIA takes the big mesh outputs) | **9.3-10.3 fps** (97-107 ms); untranslated 4 (was 8); refused 6, all wanting 64-lane waves |
 | 33 | + fork #589 (dropped heaps let go), #592 (a lane-branch region that only raises an LDS flag runs as two host waves) | 9.3-9.9 fps; refused 5 |
-| 34 | the stack rebased onto fork main `310c6eb`, + #648 with `VICTORY_CARD_FETCH_INFLIGHT=1` | 0.6-2.7 fps, then the host GPU device was removed. Another tester saw 1.6 fps on `310c6eb` (fork #652). This tree went back to the run 33 one; experiments since build into `E:\Games\Emulators\Flamingo2-exp-target`, so the launcher's build stays the good one |
+| 34 | the stack rebased onto fork main `310c6eb`, + #648 with `VICTORY_CARD_FETCH_INFLIGHT=1` | 0.6-2.7 fps, then the host GPU device was removed. Another tester saw 1.6 fps on `310c6eb` (fork #652). This tree went back to the run 33 one; experiments since build into `E:\Games\Emulators\Tirsos2-exp-target`, so the launcher's build stays the good one |
 | 35 | run 33's tree + #648 with `VICTORY_CARD_FETCH_INFLIGHT=1` (experiment build) | host GPU device removed ("no host list for a state prelude"): #648 is not used |
 | 36 | run 33's tree + fork #670 (no kernel write-watch asking for memory the guard watches) | 8.9-10.3 fps; write-watch 15.6 ms a frame (was ~17.8): kept, kept |
 | 37 | + fork #665 (relay fetches on a copy queue of their own; merges on several threads with `VICTORY_WIDE_MERGE=1`) | **10.4-11.3 fps** (89-96 ms); copy-back 28.6 ms a frame (was ~62), the relay's wait for fetches 4.9 ms (was 38-63): now the launcher's build |
-| 38 | experiment: Flamingo's plain copies that recover from a fault (`watch::try_copy`, `FLAMINGO_PLAIN_COPIES=0` turns them off) in place of `ReadProcessMemory` for title copies | 9.9-11.8 fps; the submitting thread's kernel time 31.5 -> 16.7 ms, but its lock waits 15 -> 22 ms and its waits for the card 9.5 -> 18.6 ms took the time back; no faults reported |
+| 38 | experiment: Belobug's plain copies that recover from a fault (`watch::try_copy`, `TIRSOS_PLAIN_COPIES=0` turns them off) in place of `ReadProcessMemory` for title copies | 9.9-11.8 fps; the submitting thread's kernel time 31.5 -> 16.7 ms, but its lock waits 15 -> 22 ms and its waits for the card 9.5 -> 18.6 ms took the time back; no faults reported |
 | 39 | experiment: + the plain copies in `read()` and `write_mapped` (the relay's reads and writes of title memory) | 8.8-11.7 fps; copying back 27.7 ms (was 28.6): the relay's time is comparing and merging, not kernel calls |
 | 40 | experiment: + a line for each fill of upload memory that waits for the card | the wait (17 ms, once a frame) is a 480-byte constant buffer of a fresh descriptor table inside the title's 174 MB buffer, which shaders in the air may write |
-| 41 | experiment: + fresh tables' constant views read their buffer's host copy, brought up to date like any buffer view, when 256-byte aligned (`FLAMINGO_DIRECT_CBV=0` copies as before) | 10.5-12.0 fps (11.1 on average, was 10.7); fills waiting for the card 1.0 -> 0.0 a frame; picture right. Left: buffer copies waiting for the card (10.6 ms a frame) and 18 ms of submission lock waits |
+| 41 | experiment: + fresh tables' constant views read their buffer's host copy, brought up to date like any buffer view, when 256-byte aligned (`TIRSOS_DIRECT_CBV=0` copies as before) | 10.5-12.0 fps (11.1 on average, was 10.7); fills waiting for the card 1.0 -> 0.0 a frame; picture right. Left: buffer copies waiting for the card (10.6 ms a frame) and 18 ms of submission lock waits |
 | 42 | run 41's build + 200 stack dumps (`VICTORY_STACKS`), read with `stack_profile.py` (dbghelp) | the submitting thread: 30% in the title's own kernel waits, 15% refreshing host copies, 11% write-watch askings, 11% settles and present, 8% copies, 5.5% letting host textures go (the once-a-second sweep), 2.5% reading the clock. The relay thread is idle half the time |
-| 43 | + retired objects dropped on a thread of their own (`FLAMINGO_DROP_THREAD=0` drops in place) + `run_deferred` reads the clock only for steps that use it | 10.4-12.0 fps (11.1 on average): no change on average |
+| 43 | + retired objects dropped on a thread of their own (`TIRSOS_DROP_THREAD=0` drops in place) + `run_deferred` reads the clock only for steps that use it | 10.4-12.0 fps (11.1 on average): no change on average |
 | 44 | + a line for each title buffer copy that waits for the card | once a frame, a 20 KiB copy out of the 174 MB buffer (shaders may write it) to a fixed destination: about 18 ms of waiting for the card |
 | 45 | experiment: such copies made on the card (`CopyBufferRegion` in the title's list, the destination declared written) | worse: 8.7 fps. Fills of upload memory then waited instead (3.8 a frame, 43 ms): one reads the copy's destination as a misaligned constant buffer. Taken out again |
-| 46 | run 43's build + the stats overlay (`FLAMINGO_OSD`, owned by the game's window) | **10.6-12.1 fps (11.3 on average)**, picture right: now the launcher's build (scratch commit `7aafd29`, branch `flamingo-wip-46`) |
+| 46 | run 43's build + the stats overlay (`TIRSOS_OSD`, owned by the game's window) | **10.6-12.1 fps (11.3 on average)**, picture right: now the launcher's build (scratch commit `7aafd29`, branch `tirsos-wip-46`) |
 | 47 | timing run (`VICTORY_GPU_TIMING=1 VICTORY_D3D12_DRED=1`, relay and late wait off) | 6.1 fps; only 25-88 commands a frame carry notes, so the card's time by command says little. Per frame: 693 full waits for the title's barrier groups, 2,410 indirect commands each bounded by a pass of ours between two full waits |
 | 48 | launcher build + `VICTORY_BARRIER_TEST=indirect` (timing only: the bounding pass without its two waits) | 10.82 fps, the card still about 65% busy: those waits are not what holds the frame |
 | 49 | launcher build + `VICTORY_INPLACE=1` | 10.74 fps: only 81 windows (384 MB) went in place; 1,145 were turned down as view memory (the page pool, made with `SEC_RESERVE`) or not private memory committed whole. victory-fork #772's `VICTORY_INPLACE_POOL=1` is aimed at exactly that |
-| 50 | launcher tree + `FLAMINGO_READ_SETTLE_TEST=1` (timing only: reads of shader-written memory do not wait) | 11.13 fps: the settles for reads are not what holds the frame either; the submitting thread then spent longer in the title's code between submissions |
+| 50 | launcher tree + `TIRSOS_READ_SETTLE_TEST=1` (timing only: reads of shader-written memory do not wait) | 11.13 fps: the settles for reads are not what holds the frame either; the submitting thread then spent longer in the title's code between submissions |
 | 51 | the launcher build + 200 stack dumps, every thread (`thread_busy.py`) | in the world: the submitting thread is busy 71% (write-watch askings and their journal 23%, copies 6%, the diagnostics' counting allocator 4.5%, hashing 5.5%), waiting 29% (24 of 32 waits in `Host::settle`); the five recording threads are busy 40-46%, nearly all of it in our list hooks (clock reads, SipHash, the counting allocator) |
 | 52 | **a build without the diagnostics feature** (victory-hle's new `keys` feature keeps the scripted keys for runs) | **11.9-12.7 fps (12.3 on average)**, from 11.3: the counters, clock reads and counting allocator cost about 9%. Now the launcher's build (`cargo build --profile diag -p victory`, no features; scratch commit `e78c633`) |
 | 53 | lean build with the shader clean-up passes on (no `VICTORY_SHADER_OPT=0`) | 9.6 fps (with a cold pipeline cache): kept off |
@@ -125,19 +125,19 @@ TdrDelay raised to 60 s. Here TdrDelay is the default 2 s. Keep test runs short.
 | 62 | run 61's build with `VICTORY_TITLE_PATCHES=0` (the comparison) | window 11.95 fps, turned 11.68 fps: #798 is worth 2 fps |
 | 63 | + victory-fork #823 (the wave-wide form for four refused compute programs by their hash; the structure builder's last programs) | **window 14.14 fps, turned 13.05 fps**; refused 5 -> 2. Now the launcher's build |
 | 64 | + `VICTORY_BVH_BUILDER=1` (all 53 builder pipelines exist since #823) | the title crashes 67 s in, as the world loads (reads of 0x8, 0x28 and of all-ones pointers): the builder's raw-address stores to pages not made ready are lost |
-| 65 | `FLAMINGO_BVH_MISS=1`: every ray-tracing node test misses (builder off) | the cutscene much brighter, faces lit; the title hung 180 s in (frames stopped, no device loss): left off |
+| 65 | `TIRSOS_BVH_MISS=1`: every ray-tracing node test misses (builder off) | the cutscene much brighter, faces lit; the title hung 180 s in (frames stopped, no device loss): left off |
 | 66 | ScarlettPort's stand-ins (`VICTORY_AMBIENT_STUB=1`, `VICTORY_SHADOWMASK_STUB=1`, ported, GPL-3.0) | the cutscene as dark as before, the player character's body gone in the world: left off |
 | 67 | diagnostics build + stack dumps | the submitting thread waits 41% of its time in `Host::settle`: one 20 KiB title buffer copy a frame out of the shader-written 174 MB buffer, 23-34 ms a frame |
 | 68 | `VICTORY_RELAY=2` (flights waited for by what they declared) | 13.37 / 12.56 fps: no gain |
-| 69 | `FLAMINGO_CARD_FILLS=1`: that copy and the misaligned constants of shader-written memory copied on the card | 6.86 / 7.85 fps, GPU wait 57-61 ms: a copy and two barriers per draw cost the card more than the wait: left off |
+| 69 | `TIRSOS_CARD_FILLS=1`: that copy and the misaligned constants of shader-written memory copied on the card | 6.86 / 7.85 fps, GPU wait 57-61 ms: a copy and two barriers per draw cost the card more than the wait: left off |
 | 70 | the launcher build, the camera held right for 18 s (fully round, to the cell door) | window 13.4 fps; turned 8.6-12.3 fps with the card 80-85% busy (GPU-bound) and 4,700-6,200 draws; while turning 3.7-3.9 fps as texture checks reach 33 ms and 127 MB a frame |
 | 71, 72 | diagnostics build with `VICTORY_BARRIER_TEST=both`, and without | window 13.1 vs 12.4 fps: the waits for every shader write cost about 5% |
 | 73 | + victory-fork a26859f (byte-copied descriptor records mirrored), without 8dd30ab's view guard | 7.8 fps: the pass looks at 320,000 slots a frame. Kept on a scratch branch, not used |
-| 74-76 | + DualSense support, + #768 (`VICTORY_WIDE_TEXTURES=1`) | a connected DualSense becomes pad 1 and the scripted turn does nothing: test runs set `FLAMINGO_DUALSENSE=0`. With #768: window 13.65 fps, no dip below 11.7 fps while turning. Both now in the launcher |
+| 74-76 | + DualSense support, + #768 (`VICTORY_WIDE_TEXTURES=1`) | a connected DualSense becomes pad 1 and the scripted turn does nothing: test runs set `TIRSOS_DUALSENSE=0`. With #768: window 13.65 fps, no dip below 11.7 fps while turning. Both now in the launcher |
 | 77 | + victory-amd bddfb4a (a texture with only its smaller mips detiles from its start), 4d64efe (DirectStorage page arrays read when a request runs) and c6dc4d8 (a write through one view of a page seen at its other views) | the title stopped at its own breakpoint in the opening cutscene (0x80000003) |
 | 78 | as 77, `VICTORY_VIEW_GUARD=0` | no stop; window 13.65 fps, turned 13.08. The cell's wall and the cutscene's lamps show where run 76 had black. c6dc4d8's guard is now off by default (`VICTORY_VIEW_GUARD=1` on) |
 | 79 | + Belobug's ambient pass, `VICTORY_AMBIENT=0.6`: the indirect-light resolve's output replaced by a constant | worse: the cutscene washed out grey, and the player's body did not draw. Off by default |
-| 80, 81 | + Belobug 03629f3, `FLAMINGO_QUAD_HELPERS=1`: in pixel shaders, reads of the quad's other lanes reach helper lanes | the cell window's glass shows its dirt and reflections, faces look smoother. Run 80 translated every shader again (12.65 / 12.15 fps); run 81 is the warm rerun |
+| 80, 81 | + Belobug 03629f3, `TIRSOS_QUAD_HELPERS=1`: in pixel shaders, reads of the quad's other lanes reach helper lanes | the cell window's glass shows its dirt and reflections, faces look smoother. Run 80 translated every shader again (12.65 / 12.15 fps); run 81 is the warm rerun |
 | 82, 83 | quad helper reads in one quad operation for fixed patterns (across X, Y, the diagonal, one lane for all) | the cell window's wire grate draws sharp, hair shows more detail; warm (83): 11.2 fps at the window against 13.65 without (run 78), about 18% for thin geometry sampling its full-detail levels. Stays opt-in |
 | 84 | merged victory-fork main (f85101b: a submit thread, a copy queue for fetches, safer indirect windows, the first room's descriptors mirrored, the shader cache keyed on the translator instead of the executable), victory-fork #847's test change, victory-amd bddfb4a and 4d64efe again on top, Belobug's opt-ins | the grate draws sharp with no quad change (the fork's a26859f); 9.57 fps at the window, 9.38 turned, cold cache: preparing 41 to 58 ms, copy-back 23 to 35 ms. The fork's view guard is on by default here |
 | 85 | + the mesh primitive edge-flag fix (pull request #1 to this repository, from upstream VIctory #1718): a corner's index is 9 bits, the 10th is its edge flag | the pipeline cache had been cleared before it: every pipeline was made again during the run, 1,113 still waiting in the world, and the picture stayed black (not the fix) |
@@ -151,7 +151,7 @@ TdrDelay raised to 60 s. Here TdrDelay is the default 2 s. Keep test runs short.
 | 93, 94 | a sampling profile of the measured build (the new `stacks` feature: `VICTORY_STACKS` without the diagnostics) | the submitting thread: 72% in submissions, 22% in the descriptor sync (`sync_heaps`), most of that in `HostHeap::mirror`: the driver making descriptors (8.6%) and the slots' lock, which the recording threads take for their draws (7%). The heap buffer pass shows in 1-2 samples of each recording thread |
 | 95 | the descriptor sync on a thread of its own, beside the submission's copies (joined before the lists go) | worse: 9.8 fps at the window, preparing 39 to 60 ms, black rectangles over the cell and walls missing: slots made from copies not yet brought up to date. Taken back |
 | 96 | cutscene run on the Series X profile | the diner and the faces lit and detailed where Series S shows them dark and coarse; a piece of one character's body missing, a black triangle in the cell; 8.7 fps in the world against about 12 |
-| 97, 98 | the slots' descriptors made outside the slots' lock (`FLAMINGO_MIRROR_UNLOCKED`, on), against the same build with it off | 12.40 / 12.44 fps against 12.06 / 11.93, lows 12.0 against 10.4-11.7; the picture the same |
+| 97, 98 | the slots' descriptors made outside the slots' lock (`TIRSOS_MIRROR_UNLOCKED`, on), against the same build with it off | 12.40 / 12.44 fps against 12.06 / 11.93, lows 12.0 against 10.4-11.7; the picture the same |
 | 99, 100 | the title buffers' registry under a reader-writer lock (a lookup that finds a copy reads) | 12.30 / 12.13 fps in run 100 (run 99 had one long dip): no gain over run 97. Taken back |
 | 101 | the heap buffer pass's slots looked at on 4 threads, the ranges noted after | much worse: 5.0 fps at the window (lows 0.6), the pass 82 ms (textures 51 ms), blocks and specks on the picture: making views and copies for draws is not safe side by side. Taken back |
 | 102 | a play session by the user (24 minutes, DualSense, the old save moved aside so a new game starts) | the whole opening played (the save from an early test run had sent every start to the prologue). The world: 8.6 fps on average, median 7.8, a tenth of the time under 3.5; up to 11,522 draws in the city. Driving through the city looks right in daylight; black rectangles, missing shadows and dark rooms elsewhere; the first boat mission failed every time |
@@ -159,14 +159,14 @@ TdrDelay raised to 60 s. Here TdrDelay is the default 2 s. Keep test runs short.
 | 104 | + the last two in the wave-wide form | both made; the boat floats and can be driven (the start now loads the boat mission) |
 | 105 | + `VICTORY_WAVE_DEEP_SKIPS=0`, the shadow program in the wave-wide form | worse: both refused again, `CS_TransmissionVolumetricsSubmerged` no longer translates; the shadow program still fails |
 | 106 | + victory-fork #854: wave64 programs in the paired form on 32-lane GPUs | no pipeline refused, no program untranslated (the cascades' alpha shadow program translates); rows of black boxes on the water |
-| 107, 108 | + `FLAMINGO_BVH_MISS=1` (every ray misses) | the black boxes on the water gone (light streaks left where reflections take their fallback); a cutscene face well lit; no hang in two runs. On in the newest-code launcher |
+| 107, 108 | + `TIRSOS_BVH_MISS=1` (every ray misses) | the black boxes on the water gone (light streaks left where reflections take their fallback); a cutscene face well lit; no hang in two runs. On in the newest-code launcher |
 
 ## Stats overlay
 
 `F9` shows or hides a RivaTuner-style overlay at the top left of the game window. It shows fps and frame time, frames, draws per frame, CPU (preparing submissions), GPU (waiting for the card) and back (copying back) in ms per frame, VRAM in use / budget, the process's RAM, and a frame-time graph with lines at 15 and 30 fps. It updates ten times a second on its own thread and is click-through. The game window owns it, so it shows only while the game is in front.
 
-- `FLAMINGO_OSD=1` shows it from the start (the launcher sets this).
-- `FLAMINGO_OSD=0` turns it off completely.
+- `TIRSOS_OSD=1` shows it from the start (the launcher sets this).
+- `TIRSOS_OSD=0` turns it off completely.
 
 ## Memory
 
@@ -191,14 +191,14 @@ world, the frame rate and the time played. It needs the Discord desktop app runn
 application of your own. Making one takes a minute:
 
 1. Open https://discord.com/developers/applications, click **New Application** and name it
-   **Flamingo**. The name is what Discord shows after "Playing".
+   **Tirsos**. The name is what Discord shows after "Playing".
 2. Copy its **Application ID** from **General Information**.
-3. Under **Rich Presence**, then **Art Assets**, upload `assets/flamingo-512.png` with the name
-   `flamingo`.
-4. Put the id in `%LOCALAPPDATA%\flamingo\discord_app_id.txt` (the digits alone), or set
-   `FLAMINGO_DISCORD_APP_ID=<id>`.
+3. Under **Rich Presence**, then **Art Assets**, upload `assets/tirsos-512.png` with the name
+   `tirsos`.
+4. Put the id in `%LOCALAPPDATA%\tirsos\discord_app_id.txt` (the digits alone), or set
+   `TIRSOS_DISCORD_APP_ID=<id>`.
 
-`FLAMINGO_DISCORD=0` turns the presence off. `FLAMINGO_DISCORD_HIDE_TITLE=1` leaves the title's name
+`TIRSOS_DISCORD=0` turns the presence off. `TIRSOS_DISCORD_HIDE_TITLE=1` leaves the title's name
 out. Your Discord friends see whatever the presence shows.
 
 ## Diagnostics worth knowing

@@ -226,10 +226,10 @@ struct Lower<'a> {
     /// DXIL block per IR block (unreachable: none).
     block: Vec<Option<usize>>,
     cur: usize,
-    /// Flamingo: the first DXIL block of the program's body: `s.entry`, or the arm that
+    /// Tirsos: the first DXIL block of the program's body: `s.entry`, or the arm that
     /// runs after a partial dispatch's early return ([`Self::dispatch_threads_prologue`]).
     body_entry: usize,
-    /// Flamingo: per console lane (the lower, the paired form's upper), whether it is
+    /// Tirsos: per console lane (the lower, the paired form's upper), whether it is
     /// inside a partial dispatch's thread counts, where lanes past them stay alive.
     partial_active: [Option<V>; 2],
     bools: HashMap<(usize, Bool), V>,
@@ -818,7 +818,7 @@ fn lds_meetings(p: &crate::ir::Program, st: &Structured, all: &[bool]) -> Option
     let flags_on = std::env::var_os("VICTORY_LDS_FLAGS").is_none_or(|v| v != "0");
     for r in (0..n).filter(|&r| reads[r] && writes[r]).collect::<Vec<_>>() {
         let blocks: Vec<usize> = (0..n).filter(|&b| !all[b] && find(&mut region, b) == r).collect();
-        // Flamingo, with victory-fork #799: else the loose fallback, if on.
+        // Tirsos, with victory-fork #799: else the loose fallback, if on.
         if !(flags_on && lds_flag_region(p, st, &blocks)) && !LDS_LOOSE.get() {
             return None;
         }
@@ -1934,7 +1934,7 @@ impl<'a> Lower<'a> {
         self.upper = !self.upper;
     }
 
-    /// Flamingo (after victory-fork #814): a `DispatchX` with `USE_THREAD_DIMENSIONS` gives
+    /// Tirsos (after victory-fork #814): a `DispatchX` with `USE_THREAD_DIMENSIONS` gives
     /// thread counts, and the console runs no lane at or past them in a partial last group.
     /// The ray-tracing structure builder dispatches so (its programs are the spilled ones).
     /// The host runs whole groups and passes the counts (`USER_DISPATCH_THREADS`, 0: none);
@@ -5058,7 +5058,7 @@ impl<'a> Lower<'a> {
 
     /// Whether a read of another lane of this lane's quad goes through quad
     /// reads, which reach helper lanes: in a pixel shader, with
-    /// `FLAMINGO_QUAD_HELPERS=1`. At a triangle's edge the quad's other
+    /// `TIRSOS_QUAD_HELPERS=1`. At a triangle's edge the quad's other
     /// pixels are helpers (and so are discarded ones), which wave reads do
     /// not see: a derivative taken by hand was then the whole value, the
     /// texture read that used it took its smallest level, and triangles'
@@ -5066,7 +5066,7 @@ impl<'a> Lower<'a> {
     /// VIctory fork (03629f3, GPL-3.0), where it is on.
     fn helpers_read(&self, quad: bool) -> bool {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        quad && self.s.pixel && *ON.get_or_init(|| std::env::var_os("FLAMINGO_QUAD_HELPERS").is_some_and(|v| v == "1"))
+        quad && self.s.pixel && *ON.get_or_init(|| std::env::var_os("TIRSOS_QUAD_HELPERS").is_some_and(|v| v == "1"))
     }
 
     /// `x` of the lane `perm` names for each place in the quad, in one quad

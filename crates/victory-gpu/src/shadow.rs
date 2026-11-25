@@ -77,7 +77,7 @@ pub(crate) struct Shadow {
     /// and the bytes from the buffer's first byte to `start` (the heap
     /// begins on a 64 KiB line; a title buffer need not).
     place: Option<(windows::Win32::Graphics::Direct3D12::ID3D12Heap, u64)>,
-    /// Flamingo: the frame (plus one) whose lists last declared shader
+    /// Tirsos: the frame (plus one) whose lists last declared shader
     /// writes here ([`Shadow::gpu_wrote_lately`]); 0 if none ever did.
     gpu_wrote: AtomicU64,
 }
@@ -2090,7 +2090,7 @@ mod merge_tests {
 /// snapshot still holds) and the bytes of title memory they copy.
 static LIVE: [std::sync::atomic::AtomicU64; 2] = [const { std::sync::atomic::AtomicU64::new(0) }; 2];
 
-/// Flamingo (`FLAMINGO_CARD_FILLS=1`): reads of title memory that shaders
+/// Tirsos (`TIRSOS_CARD_FILLS=1`): reads of title memory that shaders
 /// wrote lately, made on the card in the list's order instead of on the
 /// CPU at submission. A read at submission has to wait for every flight
 /// that may write the memory to land: a 20 KiB title buffer copy out of the
@@ -2099,7 +2099,7 @@ static LIVE: [std::sync::atomic::AtomicU64; 2] = [const { std::sync::atomic::Ato
 /// for draws did the same once the copy no longer did (run 45).
 pub(crate) fn card_fills() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("FLAMINGO_CARD_FILLS").is_some_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var_os("TIRSOS_CARD_FILLS").is_some_and(|v| v == "1"))
 }
 
 /// A title buffer copy (`dst`, `src` title addresses, `len` bytes) made on
@@ -2518,7 +2518,7 @@ impl Shadow {
         }
     }
 
-    /// Flamingo: whether lists of this frame or the last declared shader
+    /// Tirsos: whether lists of this frame or the last declared shader
     /// writes here: what title memory holds here may be behind the card's.
     pub(crate) fn gpu_wrote_lately(&self) -> bool {
         let wrote = self.gpu_wrote.load(Ordering::Relaxed);
@@ -2944,7 +2944,7 @@ impl Shadow {
             }
             found
         };
-        // Flamingo: a range is looked through on several threads whatever
+        // Tirsos: a range is looked through on several threads whatever
         // its size. The world's ranges follow the camera, so the snapshots
         // kept (`keeps`) rarely fit them and they are compared whole: 340
         // ranges of 22.9 MB in a frame, on one thread 100 ms of a frame of
@@ -3360,7 +3360,7 @@ impl Shadow {
     /// Copies the pages of `[from, to)` written after their last copy
     /// (`written`: last writes by page, in page order; `now`: this
     /// asking), whole pages within the buffer.
-    /// Flamingo: the oldest asking at which the copy took a page of `[from,
+    /// Tirsos: the oldest asking at which the copy took a page of `[from,
     /// to)` that it has taken (`u64::MAX` if none): a page written at or
     /// before it is no news to the copy ([`crate::watch::writes`]'s `since`).
     fn oldest_taken(&self, from: usize, to: usize) -> u64 {

@@ -97,7 +97,7 @@ static JOURNAL: Mutex<Journal> = Mutex::new(Journal {
 const COLD_AFTER: u32 = 90;
 
 /// Whether the kernel asking of the refreshed piece `[first, last)` (pages)
-/// can be left out (Flamingo). The world's submissions ask the kernel about
+/// can be left out (Tirsos). The world's submissions ask the kernel about
 /// the same big ranges some 30 times a frame, and 8.5 of the 8.6 GB a frame
 /// they look at (17.8 ms, run 27) was never written: the title's static
 /// geometry. A piece found unwritten `COLD_AFTER` times in a row is asked at
@@ -106,14 +106,14 @@ const COLD_AFTER: u32 = 90;
 /// kernel keeps a page's written mark until it is asked, so a write that a
 /// skipped asking would have seen is seen at the piece's next asking, at
 /// most a frame later. (Whole runs of nearby pieces were never all clean:
-/// a dynamic buffer lies beside most static ones.) `FLAMINGO_COLD_ASKS=0`
-/// asks every time. Off by default (`FLAMINGO_COLD_ASKS=1` turns it on): in
+/// a dynamic buffer lies beside most static ones.) `TIRSOS_COLD_ASKS=0`
+/// asks every time. Off by default (`TIRSOS_COLD_ASKS=1` turns it on): in
 /// run 30 it left out 168 of some 2,600 askings a frame and saved nothing
 /// measurable; an asking's cost is mostly the call (7 microseconds), and the
 /// pieces around a cold one are still asked in one run with it.
 fn cold_skip(j: &mut Journal, first: usize, last: usize, frame: u64) -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if !*ON.get_or_init(|| std::env::var_os("FLAMINGO_COLD_ASKS").is_some_and(|v| v == "1")) {
+    if !*ON.get_or_init(|| std::env::var_os("TIRSOS_COLD_ASKS").is_some_and(|v| v == "1")) {
         return false;
     }
     cold_ready(j, first, last, frame)
@@ -181,7 +181,7 @@ pub(crate) fn ask_ahead(ranges: &[(usize, usize)]) {
     j.asked += 1;
     j.ahead_asked = j.asked;
     j.ahead.clear();
-    // Flamingo: the cold pieces this frame already asked about are answered
+    // Tirsos: the cold pieces this frame already asked about are answered
     // from the journal, and the others asked ([`cold_skip`]).
     let frame = crate::frame::current();
     let all = pieces;
@@ -467,7 +467,7 @@ pub(crate) fn asked(start: usize, end: usize) -> Option<(u64, Vec<(usize, u64)>)
 /// kernel just reported. `None` if the memory is not write-watched (nor,
 /// with `guarded`, view memory, which is then guarded).
 ///
-/// Flamingo: only pages last written by an asking after `since` are listed
+/// Tirsos: only pages last written by an asking after `since` are listed
 /// (0: all). The callers want those alone (what their copies took is as
 /// new), and the whole list, made anew at every one of some 2,400 askings
 /// a frame, was most of this function's time (run 119).
@@ -1730,16 +1730,16 @@ fn install() {
     });
 }
 
-// Flamingo: a copy that takes an access violation where a page is not there
+// Tirsos: a copy that takes an access violation where a page is not there
 // returns false instead ([`try_copy`]). `rep movsb` is the only instruction
 // that can fault; [`copy_failed`] sends a fault there to the false return.
 core::arch::global_asm!(
     ".text",
     ".p2align 4",
-    ".globl flamingo_try_copy",
-    ".def flamingo_try_copy; .scl 2; .type 32; .endef",
-    ".seh_proc flamingo_try_copy",
-    "flamingo_try_copy:",
+    ".globl tirsos_try_copy",
+    ".def tirsos_try_copy; .scl 2; .type 32; .endef",
+    ".seh_proc tirsos_try_copy",
+    "tirsos_try_copy:",
     "push rdi",
     ".seh_pushreg rdi",
     "push rsi",
@@ -1748,17 +1748,17 @@ core::arch::global_asm!(
     "mov rdi, rcx",
     "mov rsi, rdx",
     "mov rcx, r8",
-    ".globl flamingo_try_copy_body",
-    "flamingo_try_copy_body:",
+    ".globl tirsos_try_copy_body",
+    "tirsos_try_copy_body:",
     "rep movsb",
-    ".globl flamingo_try_copy_end",
-    "flamingo_try_copy_end:",
+    ".globl tirsos_try_copy_end",
+    "tirsos_try_copy_end:",
     "mov eax, 1",
     "pop rsi",
     "pop rdi",
     "ret",
-    ".globl flamingo_try_copy_fault",
-    "flamingo_try_copy_fault:",
+    ".globl tirsos_try_copy_fault",
+    "tirsos_try_copy_fault:",
     "xor eax, eax",
     "pop rsi",
     "pop rdi",
@@ -1767,21 +1767,21 @@ core::arch::global_asm!(
 );
 
 unsafe extern "C" {
-    fn flamingo_try_copy(dst: *mut u8, src: *const u8, len: usize) -> u32;
-    static flamingo_try_copy_body: u8;
-    static flamingo_try_copy_end: u8;
-    static flamingo_try_copy_fault: u8;
+    fn tirsos_try_copy(dst: *mut u8, src: *const u8, len: usize) -> u32;
+    static tirsos_try_copy_body: u8;
+    static tirsos_try_copy_end: u8;
+    static tirsos_try_copy_fault: u8;
 }
 
 /// If the fault is [`try_copy`]'s, sends the thread to its false return.
 fn copy_failed(context: &mut windows_sys::Win32::System::Diagnostics::Debug::CONTEXT) -> bool {
     let rip = context.Rip as usize;
-    let body = &raw const flamingo_try_copy_body as usize;
-    let end = &raw const flamingo_try_copy_end as usize;
+    let body = &raw const tirsos_try_copy_body as usize;
+    let end = &raw const tirsos_try_copy_end as usize;
     if rip < body || rip >= end {
         return false;
     }
-    context.Rip = &raw const flamingo_try_copy_fault as u64;
+    context.Rip = &raw const tirsos_try_copy_fault as u64;
     true
 }
 
@@ -1791,19 +1791,19 @@ fn copy_failed(context: &mut windows_sys::Win32::System::Diagnostics::Debug::CON
 /// false if a page of either side is not there or not writable, and then
 /// the destination may hold part of the bytes, as after a failed kernel
 /// copy. A write to a block our handler made read-only is taken by it
-/// first, as for the title's writes. `FLAMINGO_PLAIN_COPIES=0` always says
+/// first, as for the title's writes. `TIRSOS_PLAIN_COPIES=0` always says
 /// false (the kernel copies).
 pub(crate) fn try_copy(dst: *mut u8, src: *const u8, len: usize) -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if !*ON.get_or_init(|| {
         install();
-        std::env::var_os("FLAMINGO_PLAIN_COPIES").is_none_or(|v| v != "0")
+        std::env::var_os("TIRSOS_PLAIN_COPIES").is_none_or(|v| v != "0")
     }) {
         return false;
     }
     // SAFETY: a fault in the copy returns false through our handler; the
     // caller vouches that the destination may be written where mapped.
-    unsafe { flamingo_try_copy(dst, src, len) != 0 }
+    unsafe { tirsos_try_copy(dst, src, len) != 0 }
 }
 
 /// Whether `at` is committed memory now that a write may go through.
@@ -1861,7 +1861,7 @@ mod tests {
         unsafe { ((p + PAGE + 8) as *mut u8).write(1) };
         let (now, after) = writes(start, end, false, 0).expect("watched");
         assert_eq!(after, [(p / PAGE + 1, now)]);
-        // Flamingo: what an asking after the write's lists is not news.
+        // Tirsos: what an asking after the write's lists is not news.
         assert!(writes(start, end, false, now).expect("watched").1.is_empty());
         // Another asker after the kernel's bit was cleared still sees it.
         let (later, again) = writes(p + PAGE, p + 2 * PAGE, false, 0).expect("watched");
@@ -2425,9 +2425,9 @@ mod try_copy_tests {
         // SAFETY: CONTEXT is a plain C record. The address check uses only Rip
         // and never executes the artificial address.
         let mut context: CONTEXT = unsafe { std::mem::zeroed() };
-        context.Rip = (&raw const super::flamingo_try_copy_end) as u64;
+        context.Rip = (&raw const super::tirsos_try_copy_end) as u64;
         assert!(!copy_failed(&mut context));
-        assert_eq!(context.Rip, (&raw const super::flamingo_try_copy_end) as u64);
+        assert_eq!(context.Rip, (&raw const super::tirsos_try_copy_end) as u64);
     }
 
     /// A plain copy copies mapped memory, and says false for a page that

@@ -1,4 +1,4 @@
-//! Discord Rich Presence (Flamingo): "Playing <application name>" with the title's
+//! Discord Rich Presence (Tirsos): "Playing <application name>" with the title's
 //! name, whether it is in its menus or its world, the frame rate and the time
 //! played. It talks to the Discord client on this PC through its local pipe
 //! (`\\.\pipe\discord-ipc-N`); Discord shows the presence to the user's
@@ -6,10 +6,10 @@
 //!
 //! It needs the id of a Discord application of the user's own (Discord
 //! Developer Portal, New Application, named as the presence should read, with
-//! the logo uploaded under Rich Presence, Art Assets, as `flamingo`):
-//! `FLAMINGO_DISCORD_APP_ID=<id>`, or the id alone in
-//! `%LOCALAPPDATA%\flamingo\discord_app_id.txt`. `FLAMINGO_DISCORD=0` turns it
-//! off; `FLAMINGO_DISCORD_HIDE_TITLE=1` leaves the title's name out.
+//! the logo uploaded under Rich Presence, Art Assets, as `tirsos`):
+//! `TIRSOS_DISCORD_APP_ID=<id>`, or the id alone in
+//! `%LOCALAPPDATA%\tirsos\discord_app_id.txt`. `TIRSOS_DISCORD=0` turns it
+//! off; `TIRSOS_DISCORD_HIDE_TITLE=1` leaves the title's name out.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -28,14 +28,14 @@ const RETRY: Duration = Duration::from_secs(3);
 
 /// Starts the presence on a thread of its own, if an application id is set.
 pub fn start(title_dir: &Path) {
-    if std::env::var_os("FLAMINGO_DISCORD").is_some_and(|v| v == "0") {
+    if std::env::var_os("TIRSOS_DISCORD").is_some_and(|v| v == "0") {
         return;
     }
     let Some(app) = app_id() else {
-        println!("discord        off (no FLAMINGO_DISCORD_APP_ID; see FLAMINGO.md)");
+        println!("discord        off (no TIRSOS_DISCORD_APP_ID; see TIRSOS.md)");
         return;
     };
-    let title = if std::env::var_os("FLAMINGO_DISCORD_HIDE_TITLE").is_some_and(|v| v == "1") {
+    let title = if std::env::var_os("TIRSOS_DISCORD_HIDE_TITLE").is_some_and(|v| v == "1") {
         None
     } else {
         std::fs::read_to_string(title_dir.join("MicrosoftGame.config"))
@@ -50,9 +50,9 @@ pub fn start(title_dir: &Path) {
 }
 
 fn app_id() -> Option<String> {
-    let id = std::env::var("FLAMINGO_DISCORD_APP_ID").ok().or_else(|| {
+    let id = std::env::var("TIRSOS_DISCORD_APP_ID").ok().or_else(|| {
         let dir = std::env::var_os("LOCALAPPDATA")?;
-        std::fs::read_to_string(Path::new(&dir).join("flamingo").join("discord_app_id.txt")).ok()
+        std::fs::read_to_string(Path::new(&dir).join("tirsos").join("discord_app_id.txt")).ok()
     })?;
     let id = id.trim();
     (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then(|| id.to_owned())
@@ -155,7 +155,7 @@ fn activity(pid: u32, title: Option<&str>, state: &str, started: u64, nonce: u64
     format!(
         concat!(
             r#"{{"cmd":"SET_ACTIVITY","args":{{"pid":{},"activity":{{{}"state":"{}","#,
-            r#""timestamps":{{"start":{}}},"assets":{{"large_image":"flamingo","large_text":"Flamingo"}}}}}},"nonce":"{}"}}"#
+            r#""timestamps":{{"start":{}}},"assets":{{"large_image":"tirsos","large_text":"Tirsos"}}}}}},"nonce":"{}"}}"#
         ),
         pid,
         details,

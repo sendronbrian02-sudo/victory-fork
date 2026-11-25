@@ -70,7 +70,7 @@ pub(crate) struct Shader {
     /// ([`Shader::walks`]).
     #[cfg(windows)]
     walks: OnceLock<bool>,
-    /// Flamingo: the console compute program's thread-group size, once
+    /// Tirsos: the console compute program's thread-group size, once
     /// looked at ([`console_threads`]).
     #[cfg(windows)]
     threads: OnceLock<Option<[u32; 3]>>,
@@ -86,7 +86,7 @@ impl std::fmt::Debug for Shader {
     }
 }
 
-/// Flamingo: the program's name as its container spells it (the first
+/// Tirsos: the program's name as its container spells it (the first
 /// `XX_Name`: `CS_...`, `PS_...`), for the log lines that say a shader or
 /// pipeline failed: a hash alone says nothing about what goes missing.
 fn program_name(container: &[u8]) -> Option<&str> {
@@ -221,10 +221,10 @@ impl Shader {
                     KEPT[2].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     KEPT[3].fetch_add(t.host.dxil.len() as u64, std::sync::atomic::Ordering::Relaxed);
                 }
-                // Flamingo diagnostics: `FLAMINGO_SAVE_FAILED=<dir>`: each shader that does not
+                // Tirsos diagnostics: `TIRSOS_SAVE_FAILED=<dir>`: each shader that does not
                 // translate, as the title gave it (`<hash>.<stage>.cdxil`), for `translate`
                 if done.is_err()
-                    && let Some(dir) = std::env::var_os("FLAMINGO_SAVE_FAILED")
+                    && let Some(dir) = std::env::var_os("TIRSOS_SAVE_FAILED")
                 {
                     let dir = std::path::PathBuf::from(dir);
                     let _ = std::fs::create_dir_all(&dir);
@@ -502,7 +502,7 @@ pub(crate) fn walk_held(this: This) -> bool {
     true
 }
 
-/// Flamingo: the thread-group size of the console compute program of the
+/// Tirsos: the thread-group size of the console compute program of the
 /// title's pipeline `this`, for a `DispatchX` that counts threads
 /// (`draw.rs` `State::dispatch_x`).
 #[cfg(windows)]
@@ -688,7 +688,7 @@ pub(crate) fn making() -> u64 {
     make::waiting()
 }
 
-/// Flamingo, for the stats overlay: pipelines made since the start and
+/// Tirsos, for the stats overlay: pipelines made since the start and
 /// those without a host pipeline ([`make::made`]), and shaders that do not
 /// translate.
 #[cfg(windows)]

@@ -95,7 +95,7 @@ impl<'a> Lower<'a> {
             return Err("a ray-tracing node test's result");
         };
         let site = (b, i);
-        // Flamingo (`FLAMINGO_BVH_MISS=1`): every node test misses, for runs
+        // Tirsos (`TIRSOS_BVH_MISS=1`): every node test misses, for runs
         // without the structure builder (`VICTORY_BVH_BUILDER` off). The
         // title's structures are then never built, and its tracing programs
         // read whatever title memory holds there: zeros read as a triangle at
@@ -576,9 +576,9 @@ impl<'a> Lower<'a> {
     }
 }
 
-/// Whether every ray-tracing node test misses (`FLAMINGO_BVH_MISS=1`; see
+/// Whether every ray-tracing node test misses (`TIRSOS_BVH_MISS=1`; see
 /// [`Lower::bvh`]).
 fn bvh_miss() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("FLAMINGO_BVH_MISS").is_some_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var_os("TIRSOS_BVH_MISS").is_some_and(|v| v == "1"))
 }

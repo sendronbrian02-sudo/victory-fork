@@ -1,14 +1,14 @@
-<p align="center"><img src="https://github.com/realblastex/flamingo/releases/download/progress-2026-11-25/flamingo-512.png" width="160" alt="Flamingo"></p>
+<p align="center"><img src="https://github.com/sendronbrian02-sudo/victory-fork/releases/download/tirsos/tirsos-512.png" width="160" alt="Tirsos"></p>
 
-# Flamingo
+# Tirsos
 
-Flamingo is a work-in-progress fork of [victory-fork](https://github.com/fxceless/victory-fork),
+Tirsos is a work-in-progress fork of [victory-fork](https://github.com/fxceless/victory-fork),
 which is itself a fork of [VIctory](https://github.com/Marvisak/VIctory). VIctory is a
 compatibility layer that runs an Xbox Series title natively on Windows from files you supply.
-Flamingo is tuned for one freshly released open-world Xbox Series title, run from a dump of your
+Tirsos is tuned for one freshly released open-world Xbox Series title, run from a dump of your
 own legally obtained copy, on an NVIDIA RTX 4070.
 
-**This repository contains no game files, code or assets.** You need your own copy. Flamingo is
+**This repository contains no game files, code or assets.** You need your own copy. Tirsos is
 not affiliated with or endorsed by any game's developer or publisher, or by Microsoft.
 
 ## Status (2026-11-25)
@@ -26,28 +26,28 @@ Tested on one machine: Windows 11, NVIDIA RTX 4070 12 GB, Series S profile (`--c
 | Stability | 15-minute runs end without a device loss |
 
 <p align="center">
-<img src="https://github.com/realblastex/flamingo/releases/download/progress-2026-11-25/prologue-window.png" width="70%" alt="The first gameplay scene">
+<img src="https://github.com/sendronbrian02-sudo/victory-fork/releases/download/tirsos/prologue-window.png" width="70%" alt="The first gameplay scene">
 </p>
 
 Screenshots and the logo are attachments of the
-[progress release](https://github.com/realblastex/flamingo/releases/tag/progress-2026-11-25), not
+[progress release](https://github.com/sendronbrian02-sudo/victory-fork/releases), not
 files in the tree: the asset policy ([docs/asset-policy.md](docs/asset-policy.md)) keeps
 everything derived from the game out of the repository. Every change and every measured run is
-logged in [FLAMINGO.md](FLAMINGO.md).
+logged in [TIRSOS.md](TIRSOS.md).
 
-## What Flamingo adds over victory-fork
+## What Tirsos adds over victory-fork
 
-Flamingo's own work:
+Belobug's own work:
 
 - **Stats overlay** (RivaTuner-style): fps and frame time, frames, draws, CPU, GPU and
   copy-back time per frame, VRAM, RAM, and a frame-time graph. **F9** shows or hides it.
-  `FLAMINGO_OSD=1` shows it from the start; `FLAMINGO_OSD=0` turns it off.
-  <img src="https://github.com/realblastex/flamingo/releases/download/progress-2026-11-25/stats-overlay.png" alt="Stats overlay">
+  `TIRSOS_OSD=1` shows it from the start; `TIRSOS_OSD=0` turns it off.
+  <img src="https://github.com/sendronbrian02-sudo/victory-fork/releases/download/tirsos/stats-overlay.png" alt="Stats overlay">
 - **Discord Rich Presence**: the game's name, menu or world, frame rate and time played.
 - **DualSense support**: a PlayStation 5 controller (and the DualSense Edge), over USB or
   Bluetooth, is the title's first pad while no Xbox controller is connected. It is read over HID,
   so Steam Input and DS4Windows are not needed. Buttons map by position (cross is A, circle is B,
-  and so on); Options is Menu, and Create or the touch pad click is View. `FLAMINGO_DUALSENSE=0`
+  and so on); Options is Menu, and Create or the touch pad click is View. `TIRSOS_DUALSENSE=0`
   turns it off. Rumble and the light bar are not driven yet.
 - **Faster submissions**:
   - title-memory copies that recover from a fault instead of a kernel call per copy;
@@ -74,21 +74,21 @@ Pull requests merged from victory-fork and VIctory that have not landed upstream
 - victory-fork #768 (opt-in, `VICTORY_WIDE_TEXTURES=1`): a submission's texture checks run
   several at a time.
 
-Experiments, all off by default, kept for testing (each has its result in FLAMINGO.md):
+Experiments, all off by default, kept for testing (each has its result in TIRSOS.md):
 
 - `VICTORY_AMBIENT_STUB=1`, `VICTORY_SHADOWMASK_STUB=1`: stand-ins for the ray-traced lighting
   passes, ported from [ScarlettPort](https://github.com/ZigZagBoi1/ScarlettPort) (GPL-3.0). Here
   they did not brighten the dark areas.
-- `FLAMINGO_BVH_MISS=1`: every ray-tracing node test misses. The cutscene gets brighter, but one run
+- `TIRSOS_BVH_MISS=1`: every ray-tracing node test misses. The cutscene gets brighter, but one run
   hung.
-- `FLAMINGO_CARD_FILLS=1`: reads of memory that shaders wrote lately are made on the card. Slower.
+- `TIRSOS_CARD_FILLS=1`: reads of memory that shaders wrote lately are made on the card. Slower.
 - `VICTORY_AMBIENT=<level>`: after the indirect-light resolve, its output is replaced by a constant
   (from [Belobug's fork](https://github.com/Belobug/VIctory-Belobug-AMD), GPL-3.0). At 0.6 the
   opening cutscene washed out grey.
-- `FLAMINGO_QUAD_HELPERS=1`: in pixel shaders, reads of the quad's other lanes reach helper lanes
+- `TIRSOS_QUAD_HELPERS=1`: in pixel shaders, reads of the quad's other lanes reach helper lanes
   (also from Belobug's fork). Sharper fine detail, about 18% slower.
 
-The full list, with the runs behind each one, is in [FLAMINGO.md](FLAMINGO.md).
+The full list, with the runs behind each one, is in [TIRSOS.md](TIRSOS.md).
 
 ## Build and run
 
@@ -110,7 +110,7 @@ set VICTORY_CARD_BUFFERS_MB=1024
 set VICTORY_INDIRECT_WINDOW=1
 set VICTORY_SHADER_OPT=0
 set VICTORY_WIDE_MERGE=1
-set FLAMINGO_OSD=1
+set TIRSOS_OSD=1
 target\diag\victory.exe run <path to your dump>\<the title's executable> --execute --console series-s
 ```
 
@@ -118,35 +118,35 @@ The first launch after a build translates and compiles shaders for a few minutes
 use the cache.
 
 For Discord Rich Presence, put your own Discord application id in
-`%LOCALAPPDATA%\flamingo\discord_app_id.txt` (FLAMINGO.md has the steps).
-`FLAMINGO_DISCORD=0` turns it off.
+`%LOCALAPPDATA%\tirsos\discord_app_id.txt` (TIRSOS.md has the steps).
+`TIRSOS_DISCORD=0` turns it off.
 
 ## Reporting a problem (logging build)
 
 When something goes wrong (a black screen, a crash, missing pictures), a log tells us what
-happened on your PC. `flamingo-log.cmd` makes one:
+happened on your PC. `tirsos-log.cmd` makes one:
 
 1. Install [Rust](https://rustup.rs) and [Git](https://git-scm.com) if you have not.
-2. Get the newest code: `git clone https://github.com/realblastex/flamingo` (or, in a clone you
+2. Get the newest code: `git clone https://github.com/sendronbrian02-sudo/victory-fork` (or, in a clone you
    already have, `git pull`).
-3. Drag the title's executable from your own dump onto `flamingo-log.cmd` in the repository's
+3. Drag the title's executable from your own dump onto `tirsos-log.cmd` in the repository's
    folder, or run it from a command prompt:
 
    ```
-   flamingo-log.cmd "D:\path\to\your\dump\the-title.exe"
+   tirsos-log.cmd "D:\path\to\your\dump\the-title.exe"
    ```
 
-   It builds Flamingo (several minutes the first time), runs it with the settings above and
-   its log on, and remembers the path for next time (`flamingo-game.txt`).
+   It builds Tirsos (several minutes the first time), runs it with the settings above and
+   its log on, and remembers the path for next time (`tirsos-game.txt`).
 4. Play until the problem shows (for a black screen, wait a minute in it), then close the game
    window.
-5. The log is saved in the `logs` folder as `flamingo-<date>-<time>.log`, with a `.zip` of it
+5. The log is saved in the `logs` folder as `tirsos-<date>-<time>.log`, with a `.zip` of it
    next to it (Explorer opens there). Attach the `.zip` to your issue, and say what you saw and
    when.
 
 The log starts with your Windows version, processor, memory and graphics cards with their
 driver versions. It also holds file paths of your PC, which can include your Windows user
-name: look it over before you share it. `set FLAMINGO_SERIES_X=1` before running uses the
+name: look it over before you share it. `set TIRSOS_SERIES_X=1` before running uses the
 Series X profile instead of Series S.
 
 ## Credits
@@ -173,7 +173,7 @@ Series X profile instead of Series S.
 - The audio fixes of victory-fork #959 (upstream VIctory's XMA and audio ring fixes).
 - **[XCL](https://github.com/ivall/xcl)** by ivall and its contributors (GPL-2.0-only) was used as
   a reference only. No XCL code is copied here.
-- Flamingo's changes were developed with [Claude Code](https://claude.com/claude-code).
+- Belobug's changes were developed with [Claude Code](https://claude.com/claude-code).
 
 ## License
 

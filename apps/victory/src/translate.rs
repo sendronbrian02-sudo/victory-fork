@@ -489,7 +489,7 @@ fn translate(
     let Ok(container) = Container::parse(&bytes) else {
         return t.fail("no DXIL part (SM5 or older)".into(), example);
     };
-    // Flamingo diagnostics: `VICTORY_PARTS=1` lists each container's parts
+    // Tirsos diagnostics: `VICTORY_PARTS=1` lists each container's parts
     // (fourcc and bytes), e.g. for the Series S programs with no DXIL part.
     if std::env::var_os("VICTORY_PARTS").is_some() {
         let parts: Vec<String> = container

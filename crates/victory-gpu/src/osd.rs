@@ -1,11 +1,11 @@
-//! Flamingo: an on-screen display of the frame rate and what a frame costs,
+//! Tirsos: an on-screen display of the frame rate and what a frame costs,
 //! in the manner of RivaTuner's: a click-through window the game's window
 //! owns (so it stays over the game's alone, goes when the game's does, and
 //! is never taken for the process's main window), at the game's top left,
 //! drawn with GDI ten times a second on a thread of its own (nothing of it
 //! runs on the threads that present). F9 shows or hides
-//! it while the game's window is in front; `FLAMINGO_OSD=1` shows it from
-//! the start, `FLAMINGO_OSD=0` leaves it out altogether.
+//! it while the game's window is in front; `TIRSOS_OSD=1` shows it from
+//! the start, `TIRSOS_OSD=0` leaves it out altogether.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -68,7 +68,7 @@ const KEY_F9: i32 = 0x78;
 pub(crate) fn frame(hwnd: HWND) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let on = *ON.get_or_init(|| {
-        let v = std::env::var("FLAMINGO_OSD").unwrap_or_default();
+        let v = std::env::var("TIRSOS_OSD").unwrap_or_default();
         SHOWN.store(v == "1", Ordering::Relaxed);
         v != "0"
     });
@@ -87,7 +87,7 @@ pub(crate) fn frame(hwnd: HWND) {
         t.last = Some(now);
     }
     if GAME.swap(hwnd.0 as usize, Ordering::Relaxed) == 0 {
-        let _ = std::thread::Builder::new().name("flamingo-osd".into()).spawn(run);
+        let _ = std::thread::Builder::new().name("tirsos-osd".into()).spawn(run);
     }
 }
 
@@ -104,14 +104,14 @@ fn run() {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: Some(window_proc),
             hInstance: instance.into(),
-            lpszClassName: w!("FlamingoOsd"),
+            lpszClassName: w!("TirsosOsd"),
             ..Default::default()
         };
         RegisterClassExW(&class);
         let Ok(hwnd) = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-            w!("FlamingoOsd"),
-            w!("Flamingo OSD"),
+            w!("TirsosOsd"),
+            w!("Tirsos OSD"),
             WS_POPUP,
             0,
             0,
@@ -274,7 +274,7 @@ fn paint(target: HDC) {
         let (dim, white, pink) = (rgb(150, 150, 165), rgb(235, 235, 240), rgb(255, 120, 170));
         let row = 18;
         let mut y = 6;
-        text(hdc, 10, y, pink, "FLAMINGO");
+        text(hdc, 10, y, pink, "TIRSOS");
         text(hdc, 250, y, dim, "F9 hide");
         y += row + 2;
         text(hdc, 10, y, dim, "FPS");
@@ -357,7 +357,7 @@ mod tests {
     };
 
     /// The display draws its text and graph: many pixels differ from the
-    /// background. `FLAMINGO_OSD_SAVE=<file.bmp>` keeps the picture.
+    /// background. `TIRSOS_OSD_SAVE=<file.bmp>` keeps the picture.
     #[test]
     fn draws_text_and_graph() {
         second(Second {
@@ -408,7 +408,7 @@ mod tests {
         // The background is rgb(14, 14, 20): BGRX 0x0014_0e0e.
         let drawn = pixels.iter().filter(|&&p| p & 0x00ff_ffff != 0x0014_0e0e).count();
         assert!(drawn > 2000, "only {drawn} pixels drawn");
-        if let Ok(path) = std::env::var("FLAMINGO_OSD_SAVE") {
+        if let Ok(path) = std::env::var("TIRSOS_OSD_SAVE") {
             let mut bmp = Vec::new();
             let size = 54 + pixels.len() * 4;
             bmp.extend_from_slice(b"BM");

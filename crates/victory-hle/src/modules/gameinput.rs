@@ -1089,7 +1089,7 @@ pub(crate) fn module() -> HleModule {
 }
 
 /// Host input: XInput pads, the keyboard while our process has focus.
-/// Flamingo: a DualSense as the first pad while no XInput pad is there.
+/// Tirsos: a DualSense as the first pad while no XInput pad is there.
 #[cfg(windows)]
 mod dualsense;
 
@@ -1152,7 +1152,7 @@ mod host {
         }
     }
 
-    /// Flamingo: with no XInput pad in the first slot, a DualSense there
+    /// Tirsos: with no XInput pad in the first slot, a DualSense there
     /// ([`super::dualsense`]), the scripted keys pressing it as they would
     /// an XInput pad.
     fn dualsense_pad(slot: usize) -> Option<PadState> {

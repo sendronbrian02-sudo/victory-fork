@@ -56,7 +56,7 @@ use crate::shadow::Shadow;
 
 /// Copies that can be numbered (the run of heap slots is one longer). A
 /// listed frame of the opening cutscene names about 50 windows.
-/// Flamingo: at most this many numbered copies (`VICTORY_MEMORY_COPIES`,
+/// Tirsos: at most this many numbered copies (`VICTORY_MEMORY_COPIES`,
 /// 1023 by default, at most 16383). With the structure builder on, 1023 ran
 /// out within two minutes (run 122) and 4095 did not (run 123); without it,
 /// 4095 took the frame from 95 to 105-110 ms and broke the picture in three
@@ -83,20 +83,20 @@ struct Memory {
     faults: (ID3D12Resource, *mut u32, u64),
     /// Copy `n` is `copies[n - 1]`.
     copies: Vec<Arc<Shadow>>,
-    /// Flamingo: per copy, whether it is still the copy of its memory
+    /// Tirsos: per copy, whether it is still the copy of its memory
     /// ([`Memory::forget_stale`]); a copy that is not keeps its place, and
     /// its view, until its number is given out again.
     live: Vec<bool>,
-    /// Flamingo: per copy's place, how many copies it has had (a heap's
+    /// Tirsos: per copy's place, how many copies it has had (a heap's
     /// view of the place is made again when it changed).
     generation: Vec<u32>,
-    /// Flamingo: places whose copy stopped being its memory's, and the
+    /// Tirsos: places whose copy stopped being its memory's, and the
     /// frame it did: given out again [`REUSE_FRAMES`] frames later, when no
     /// list in the air uses the old copy's view.
     free: std::collections::VecDeque<(usize, u64)>,
-    /// Flamingo: places given a copy since [`ready`] last looked.
+    /// Tirsos: places given a copy since [`ready`] last looked.
     assigned: Vec<usize>,
-    /// Flamingo: the addresses the dispatch being made ready names.
+    /// Tirsos: the addresses the dispatch being made ready names.
     named: Vec<u64>,
     /// Per host view heap (by address): the first slot of its run, and per
     /// copy's place the generation of the view there (0: none yet).
@@ -248,7 +248,7 @@ impl Memory {
         }
     }
 
-    /// Flamingo: copies that are no longer the copy of their memory (the
+    /// Tirsos: copies that are no longer the copy of their memory (the
     /// title made another buffer there, or the memory was taken out of the
     /// tables) are retired: their directory entries are emptied, so the next
     /// touch faults and maps the copy that holds the memory now, they are
@@ -322,7 +322,7 @@ impl Memory {
         self.named.push((address & !(CELL - 1)) + CELL);
     }
 
-    /// Flamingo: the place of the copy the directory gives `address`, if
+    /// Tirsos: the place of the copy the directory gives `address`, if
     /// it has one.
     fn place_of(&self, address: u64) -> Option<usize> {
         let page = address / PAGE;
@@ -335,7 +335,7 @@ impl Memory {
     }
 }
 
-/// Flamingo: whether a dispatch that can store by address declares every
+/// Tirsos: whether a dispatch that can store by address declares every
 /// numbered copy written (the default), or only the copies of the memory it
 /// names, its root views and the addresses in its root constants
 /// (`VICTORY_BVH_WRITE_ALL=0`). Every copy, compared on the CPU after each

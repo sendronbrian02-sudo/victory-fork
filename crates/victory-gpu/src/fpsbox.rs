@@ -10,7 +10,7 @@
 //! The text is drawn on the CPU with a font of its own (5 by 7 dots a
 //! glyph) into a buffer the card copies from; a buffer is made once for a
 //! text and never written again, so a present still in the air reads what
-//! it was recorded with. Flamingo: off by default; `VICTORY_FPS_COUNTER=1`
+//! it was recorded with. Tirsos: off by default; `VICTORY_FPS_COUNTER=1`
 //! draws it.
 
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ static TENTHS: AtomicU32 = AtomicU32::new(u32::MAX);
 /// Whether the counter is drawn.
 fn on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    // Flamingo: off unless asked for (`VICTORY_FPS_COUNTER=1`): the F9 overlay
+    // Tirsos: off unless asked for (`VICTORY_FPS_COUNTER=1`): the F9 overlay
     // (`osd.rs`) shows the frame rate without touching the picture.
     *ON.get_or_init(|| std::env::var_os("VICTORY_FPS_COUNTER").is_some_and(|v| v == "1"))
 }

@@ -348,7 +348,7 @@ mod tests {
         assert_eq!(regs, [Reg::S(16), Reg::S(17), Reg::S(20)]);
     }
 
-    /// Flamingo: a spilled program (the structure builder's kind) in groups of 64 asks the
+    /// Tirsos: a spilled program (the structure builder's kind) in groups of 64 asks the
     /// host for a partial `DispatchX`'s thread count along x, the one axis with more than
     /// one thread, and only there (`emit::USER_DISPATCH_THREADS`).
     #[test]

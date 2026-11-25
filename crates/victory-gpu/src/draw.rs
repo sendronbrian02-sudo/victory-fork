@@ -481,7 +481,7 @@ pub(crate) struct State {
     root_uav_slots: std::collections::HashMap<(usize, u64), RootSlot>,
     /// The list ran and its dynamic slots were given back.
     tables_gone: bool,
-    /// Flamingo: while a `DispatchX` by threads binds, its thread counts
+    /// Tirsos: while a `DispatchX` by threads binds, its thread counts
     /// along the axes whose last group is partial
     /// (`victory_shader::emit::USER_DISPATCH_THREADS`).
     dispatch_threads: [u32; 3],
@@ -703,7 +703,7 @@ pub(crate) fn dispatched() -> u64 {
     DISPATCHED.load(Ordering::Relaxed)
 }
 
-/// Flamingo: where a fresh table's constant view can read its buffer's own
+/// Tirsos: where a fresh table's constant view can read its buffer's own
 /// host copy, brought up to date at submission like any buffer view's
 /// range, instead of a copy into upload memory: the copy and its 256-byte
 /// rounded size (`constant_at`) inside it. A copy into upload memory reads
@@ -711,10 +711,10 @@ pub(crate) fn dispatched() -> u64 {
 /// the buffer it waits for the card: a 480-byte constant buffer inside the
 /// title's 174 MB buffer held the submitting thread for the card about once
 /// a frame, 17 ms (runs 39-40). The host copy is read by the card in order,
-/// after those shaders. `FLAMINGO_DIRECT_CBV=0` always copies.
+/// after those shaders. `TIRSOS_DIRECT_CBV=0` always copies.
 fn direct_constant(address: u64, size: u32) -> Option<(std::sync::Arc<crate::shadow::Shadow>, u64)> {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if !*ON.get_or_init(|| std::env::var_os("FLAMINGO_DIRECT_CBV").is_none_or(|v| v != "0")) {
+    if !*ON.get_or_init(|| std::env::var_os("TIRSOS_DIRECT_CBV").is_none_or(|v| v != "0")) {
         return None;
     }
     let rounded = u64::from(size.next_multiple_of(256));
@@ -749,7 +749,7 @@ fn root_view(list: &HostList, address: u64, srv: bool) -> Option<u64> {
         shadow.refresh(list, address, len);
         return Some(gpu);
     }
-    // Flamingo: shader-written lately, copied on the card, in order.
+    // Tirsos: shader-written lately, copied on the card, in order.
     if crate::shadow::card_fills()
         && shadow.gpu_wrote_lately()
         && let Some(gpu) = list.card_fill(&shadow, address, len)
@@ -2426,7 +2426,7 @@ impl State {
     }
 
     /// Runs a dispatch on the host.
-    /// Flamingo (after victory-fork #814): a console `DispatchX(x, y, z,
+    /// Tirsos (after victory-fork #814): a console `DispatchX(x, y, z,
     /// flags)`. With `USE_THREAD_DIMENSIONS` ([`DISPATCH_USE_THREAD_DIMENSIONS`])
     /// `x, y, z` count threads, not groups: the host runs the groups that
     /// hold them, and the translated program leaves out the lanes past
@@ -3120,7 +3120,7 @@ impl State {
                             host.constant_at(index, gpu, size);
                             continue;
                         }
-                        // Flamingo: shader-written lately, copied on the card.
+                        // Tirsos: shader-written lately, copied on the card.
                         if crate::shadow::card_fills()
                             && let Some(shadow) = crate::shadow::find(address, u64::from(size).max(2))
                             && shadow.gpu_wrote_lately()

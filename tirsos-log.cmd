@@ -1,24 +1,24 @@
 @echo off
-rem Flamingo logging run: builds Flamingo, runs it with its log on, and saves everything it
+rem Tirsos logging run: builds Tirsos, runs it with its log on, and saves everything it
 rem says, with your PC's details, to a log file (and a .zip of it) to attach to a GitHub issue.
 rem
 rem Use: drag the title's executable from your own dump onto this file, or run
-rem   flamingo-log.cmd "D:\path\to\your\dump\the-title.exe"
-rem The path is remembered in flamingo-game.txt for the next time.
-rem Series X profile instead of Series S: set FLAMINGO_SERIES_X=1 before running.
-rem FLAMINGO_LOG_QUIET=1: no pause and no Explorer window at the end (for scripts).
+rem   tirsos-log.cmd "D:\path\to\your\dump\the-title.exe"
+rem The path is remembered in tirsos-game.txt for the next time.
+rem Series X profile instead of Series S: set TIRSOS_SERIES_X=1 before running.
+rem TIRSOS_LOG_QUIET=1: no pause and no Explorer window at the end (for scripts).
 setlocal
 cd /d "%~dp0"
 
 set "GAME=%~1"
-if "%GAME%"=="" if exist flamingo-game.txt set /p GAME=<flamingo-game.txt
+if "%GAME%"=="" if exist tirsos-game.txt set /p GAME=<tirsos-game.txt
 if "%GAME%"=="" goto :usage
 if not exist "%GAME%" goto :notfound
-> flamingo-game.txt echo %GAME%
+> tirsos-game.txt echo %GAME%
 
 where cargo >nul 2>&1
 if errorlevel 1 goto :norust
-echo Building Flamingo (the first build takes several minutes)...
+echo Building Tirsos (the first build takes several minutes)...
 cargo build --profile diag -p victory
 if errorlevel 1 goto :buildfailed
 
@@ -26,10 +26,10 @@ set "TARGET=target"
 if defined CARGO_TARGET_DIR set "TARGET=%CARGO_TARGET_DIR%"
 if not exist logs mkdir logs
 for /f %%t in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%t"
-set "LOG=%~dp0logs\flamingo-%STAMP%.log"
+set "LOG=%~dp0logs\tirsos-%STAMP%.log"
 
 rem What the log starts with: the build and the PC.
-> "%LOG%" echo Flamingo logging run %STAMP%
+> "%LOG%" echo Tirsos logging run %STAMP%
 for /f %%c in ('git rev-parse --short HEAD 2^>nul') do >> "%LOG%" echo commit %%c
 powershell -NoProfile -Command "$os = Get-CimInstance Win32_OperatingSystem; $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; 'Windows: ' + $os.Caption + ' ' + $os.Version; 'CPU: ' + $cpu.Name.Trim(); 'RAM: ' + [math]::Round($os.TotalVisibleMemorySize / 1MB, 1) + ' GB'; Get-CimInstance Win32_VideoController | ForEach-Object { 'GPU: ' + $_.Name + ', driver ' + $_.DriverVersion }" >> "%LOG%" 2>&1
 
@@ -47,10 +47,10 @@ set VICTORY_SHADER_OPT=0
 set VICTORY_WIDE_MERGE=1
 set VICTORY_WIDE_TEXTURES=1
 set VICTORY_VIEW_GUARD=0
-set FLAMINGO_BVH_MISS=1
-set FLAMINGO_OSD=1
+set TIRSOS_BVH_MISS=1
+set TIRSOS_OSD=1
 set "CONSOLE=series-s"
-if "%FLAMINGO_SERIES_X%"=="1" set "CONSOLE=series-x"
+if "%TIRSOS_SERIES_X%"=="1" set "CONSOLE=series-x"
 >> "%LOG%" echo profile %CONSOLE%
 
 echo.
@@ -67,12 +67,12 @@ echo Done. Attach this file to your GitHub issue:
 echo   %LOG%.zip
 echo The log holds file paths of this PC (they can include your Windows user name):
 echo look it over before you share it.
-if not "%FLAMINGO_LOG_QUIET%"=="1" explorer /select,"%LOG%.zip"
+if not "%TIRSOS_LOG_QUIET%"=="1" explorer /select,"%LOG%.zip"
 goto :end
 
 :usage
 echo Drag the title's executable from your own dump onto this file, or run:
-echo   flamingo-log.cmd "D:\path\to\your\dump\the-title.exe"
+echo   tirsos-log.cmd "D:\path\to\your\dump\the-title.exe"
 goto :end
 
 :notfound
@@ -88,5 +88,5 @@ echo The build failed. Please copy the text above into your issue.
 goto :end
 
 :end
-if not "%FLAMINGO_LOG_QUIET%"=="1" pause
+if not "%TIRSOS_LOG_QUIET%"=="1" pause
 endlocal

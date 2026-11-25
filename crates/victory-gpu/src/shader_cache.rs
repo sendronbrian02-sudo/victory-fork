@@ -81,7 +81,7 @@ fn build() -> [u8; 32] {
         h.update(exe);
     }
     h.update(&victory_shader::emit::translation_fingerprint());
-    // Flamingo: switches this file reads that change a translation (the
+    // Tirsos: switches this file reads that change a translation (the
     // stand-ins, the listed wave forms), with their values; the shader
     // crate's fingerprint holds only the switches it reads itself.
     for name in ["VICTORY_AMBIENT_STUB", "VICTORY_SHADOWMASK_STUB", "VICTORY_WAVE_WIDE_ONLY", "VICTORY_FIRSTLANE_OWN_ONLY"] {
@@ -203,7 +203,7 @@ pub(crate) fn host_shader(container: &[u8]) -> Result<HostShader, String> {
 /// out of it with 32-lane waves and otherwise do not run at all on such a
 /// host (the driver refuses their 64-lane form: water transmission
 /// volumetrics, both kinds; particle visibility; the tiling of the
-/// screen-space reflection pass; Flamingo, run 104: the effects heap's
+/// screen-space reflection pass; Tirsos, run 104: the effects heap's
 /// relocations, `CS_DefragHeap_ComputeRelocations`, and the meshlets'
 /// triangle collection, `CS_CollectTriangles_Meshlets`).
 /// `VICTORY_WAVE_WIDE_ONLY=none` allows none.

@@ -47,8 +47,8 @@ fn main() {
         fnv(&mut state, &(text.len() as u64).to_le_bytes());
         fnv(&mut state, &text);
         let s = String::from_utf8_lossy(&text);
-        // Flamingo's own switches (`FLAMINGO_*`) change translations too.
-        for prefix in ["\"VICTORY_", "\"FLAMINGO_"] {
+        // Belobug's own switches (`TIRSOS_*`) change translations too.
+        for prefix in ["\"VICTORY_", "\"TIRSOS_"] {
             let mut rest = &s[..];
             while let Some(at) = rest.find(prefix) {
                 let tail = &rest[at + 1..];

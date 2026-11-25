@@ -13,7 +13,7 @@
 //!   shadow passes (`rtdirectionalshadows`), writing 1 (lit) so that a
 //!   trace that finds nothing does not black out the sun.
 //!
-//! Ported to Flamingo from ScarlettPort (github.com/ZigZagBoi1/ScarlettPort,
+//! Ported from ScarlettPort (github.com/ZigZagBoi1/ScarlettPort,
 //! its VIctory-based runtime, GPL-3.0-or-later), unchanged but for this note.
 //!
 //! Each output gets a value in its own encoding ([`Kind`], by the output's descriptor slot): float, packed R9G9B9E5 light, or an integer mask.

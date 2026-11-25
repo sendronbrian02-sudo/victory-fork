@@ -53,7 +53,7 @@ tempfile.workspace = true
 [features]
 # Debugging switches (scripted keys and the like).
 diagnostics = ["victory-gpu/diagnostics", "victory-loader/diagnostics", "dep:windows", "dep:windows-core", "keys"]
-# Flamingo: the scripted keys alone (`VICTORY_KEYS`), for timing runs of a
+# Tirsos: the scripted keys alone (`VICTORY_KEYS`), for timing runs of a
 # build without the diagnostics' counters and their cost.
 keys = []
 

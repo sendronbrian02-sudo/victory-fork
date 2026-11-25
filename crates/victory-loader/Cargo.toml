@@ -36,7 +36,7 @@ tempfile.workspace = true
 [features]
 # Debugging switches (scheduled stack dumps and the like).
 diagnostics = ["stacks"]
-# Flamingo: scheduled stack dumps (`VICTORY_STACKS`) alone, for a sampling
+# Tirsos: scheduled stack dumps (`VICTORY_STACKS`) alone, for a sampling
 # profile of a measured build.
 stacks = []
 

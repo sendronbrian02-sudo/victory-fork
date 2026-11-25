@@ -77,6 +77,6 @@
 Thumbs.db
 .DS_Store
 
-# flamingo-log.cmd output (holds paths of the PC it ran on)
+# tirsos-log.cmd output (holds paths of the PC it ran on)
 /logs/
-/flamingo-game.txt
+/tirsos-game.txt

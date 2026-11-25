@@ -25,7 +25,7 @@ pub(crate) enum C {
     /// Write-watch askings and their time.
     Watches,
     WatchUs,
-    /// Askings of cold page runs left out (`crate::watch`, Flamingo).
+    /// Askings of cold page runs left out (`crate::watch`, Tirsos).
     WatchesSkipped,
     /// Bytes of watched ranges checked, and of those found unchanged.
     Checked,

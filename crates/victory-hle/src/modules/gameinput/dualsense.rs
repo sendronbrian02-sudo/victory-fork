@@ -1,10 +1,10 @@
-//! Flamingo: a DualSense (the PlayStation 5 controller, and the DualSense
+//! Tirsos: a DualSense (the PlayStation 5 controller, and the DualSense
 //! Edge) as the title's first gamepad when no XInput pad is connected. It is
 //! no XInput device, so without Steam Input or a similar tool the title saw
 //! nothing. Read over HID, by USB or Bluetooth, on a thread of its own; the
 //! last report is what [`latest`] gives. Buttons go to the Xbox pad's by
 //! position (cross A, circle B, square X, triangle Y; options menu; create
-//! and the touch pad's click view). `FLAMINGO_DUALSENSE=0` leaves it out.
+//! and the touch pad's click view). `TIRSOS_DUALSENSE=0` leaves it out.
 //!
 //! Reports (the controller's own layout): USB sends report 0x01, 64 bytes;
 //! Bluetooth sends a short 0x01 until feature report 0x05 is read, then
@@ -44,11 +44,11 @@ static LAST: Mutex<Option<(Report, Instant)>> = Mutex::new(None);
 /// The last report, if one came lately. Starts the reader on first use.
 pub(super) fn latest() -> Option<Report> {
     static START: std::sync::Once = std::sync::Once::new();
-    if std::env::var_os("FLAMINGO_DUALSENSE").is_some_and(|v| v == "0") {
+    if std::env::var_os("TIRSOS_DUALSENSE").is_some_and(|v| v == "0") {
         return None;
     }
     START.call_once(|| {
-        let _ = std::thread::Builder::new().name("flamingo-dualsense".into()).spawn(read_forever);
+        let _ = std::thread::Builder::new().name("tirsos-dualsense".into()).spawn(read_forever);
     });
     let last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     last.and_then(|(r, at)| (at.elapsed() < STALE).then_some(r))

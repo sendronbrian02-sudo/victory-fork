@@ -64,7 +64,7 @@ impl Pending {
     fn make(&self) {
         self.made.get_or_init(|| {
             let made = HostPipeline::new(&self.shaders, self.graphics.as_deref());
-            // Flamingo: for the stats overlay.
+            // Tirsos: for the stats overlay.
             MADE[usize::from(made.is_none())].fetch_add(1, Ordering::Relaxed);
             made
         });
@@ -113,7 +113,7 @@ fn wait_budget() -> Duration {
 /// Pipelines queued and not made yet.
 static WAITING: AtomicU64 = AtomicU64::new(0);
 
-/// Flamingo: pipelines made since the start, and those that got no host
+/// Tirsos: pipelines made since the start, and those that got no host
 /// pipeline (the host refused it, or a shader does not translate).
 static MADE: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
 

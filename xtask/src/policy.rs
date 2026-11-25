@@ -10,7 +10,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-// Flamingo: 1 MiB (the merged shader PRs grew emit/lower.rs past 512 KiB; it is code, not game data).
+// Tirsos: 1 MiB (the merged shader PRs grew emit/lower.rs past 512 KiB; it is code, not game data).
 const MAX_FILE_SIZE: usize = 1024 * 1024;
 const MAX_ENCODED_RUN: usize = 512;
 

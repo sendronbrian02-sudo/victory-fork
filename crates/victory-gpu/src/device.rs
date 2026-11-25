@@ -388,7 +388,7 @@ extern "system" fn unknown_pipeline<const SLOT: usize>(
         let first = description
             .as_ref()
             .and_then(|w| words(w[0] as usize));
-        // Flamingo: what each of the description's first twelve words
+        // Tirsos: what each of the description's first twelve words
         // points at, where it is readable memory: its first 32 bytes, as
         // text where they are text (a container begins "DXBC").
         let pointed: Vec<String> = description
@@ -405,7 +405,7 @@ extern "system" fn unknown_pipeline<const SLOT: usize>(
                 None => format!("{w:x}"),
             })
             .collect();
-        // Flamingo: the description's words 5 and 6 (and 17 and 18, a
+        // Tirsos: the description's words 5 and 6 (and 17 and 18, a
         // second stage's, if the layout repeats every 12 words) are a code
         // address and its length in bytes: the machine code decoded, for
         // what kind of program it is (its exports say).

@@ -139,13 +139,13 @@ struct Last {
     asked: u64,
     /// The frame a partly mapped texture was last read in.
     partial: Option<u64>,
-    /// The frame its memory was last found changed by a hash (Flamingo:
+    /// The frame its memory was last found changed by a hash (Tirsos:
     /// see `HOT_FRAMES`).
     changed: Option<u64>,
 }
 
 /// A guarded texture whose memory a hash found changed in the last this
-/// many frames is hashed at every check, not every eighth frame (Flamingo).
+/// many frames is hashed at every check, not every eighth frame (Tirsos).
 /// The title writes its intro video and menu animation frames through views
 /// the guard does not see, so those textures showed a stale picture for up
 /// to seven frames between fresh ones: the startup screens and the intro
