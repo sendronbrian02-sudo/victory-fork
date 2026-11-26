@@ -663,3 +663,31 @@ c'est le seul des trois forks qui parle de notre GPU.
 
 Rien n'est pris sans mesure : chaque point entre avec son interrupteur
 (`VICTORY_...`) pour pouvoir comparer dans la même scène.
+
+## 22. Ce qui est porté de cool_fox, et ce qui est mesuré (26/11, suite)
+
+| Correctif | Commit | Mesure |
+|---|---|---|
+| `SHOW_NEW_LATER` (d'avatarmanz, complété) | `6db84fa` | 405 reports sur une course, **0 perte de device**, médiane 30,0 inchangée |
+| `INDIRECT_REST=0` par défaut | `20864b2` | clamp compilé sans erreur, médiane 30,0 inchangée, scintillement à vérifier à l'œil |
+| Garde des lanes mortes (`lanes.guards[b][i]` au site de l'accès) | `4b0daf0` | **310 tests victory-shader passent**, passage complet identique (26 084 programmes, 23 012 DXIL), course sans erreur de shader |
+
+### 22.1 Mesuré et écarté : rendre les slots dynamiques plus tôt
+
+Porté (`Detached::release_tables` appelé à l'atterrissage du vol), **mesuré,
+puis annulé** : médiane **4,3 fps contre 26,6 sans**, les fins de course à
+3,8 fps contre 4,7. Chez nous les tables sont déjà rendues par
+`queue.rs`/`list::tables_done` (4 239 tables demandées, **0 refusées**), donc
+le correctif de cool_fox n'apporte rien et casse des listes réutilisées.
+Le code est revenu à l'état d'avant : rien n'est poussé pour ce point.
+
+### 22.2 Ce qui reste, dans l'ordre
+
+1. **Résidence** (`residency.rs` de cool_fox, 200 lignes, autonome) : plafond
+   de commit, refus des envois sous 1,5 GB, prélecture limitée à 16-64 MB
+   sous pression, et surtout **ne plus envoyer des dizaines de milliers de
+   textures sur `neutral()`** quand la mémoire manque. C'est ce qui leur a
+   fait gagner 64,2 → 54,3 ms sur une 5090.
+2. **`victory warm`** (pipelines d'avance).
+3. Les leviers du fork AMD : `CARD_BUFFERS_MIN_KB=64`, `UP_QUEUE`,
+   `THIN`, `CARD_STEPS`.
