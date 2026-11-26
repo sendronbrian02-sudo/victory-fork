@@ -458,3 +458,32 @@ jamais que des fenêtres, pas des textures placées.
 4. Le plafond des copies carte (`VICTORY_CARD_BUFFERS_MB`) n'était pas la
    contrainte : à 4 096 MB, 376 tampons seulement y vont (1 206 MB), le
    reste des copies restant dans le PC.
+
+## 17. Trois minutes plus tard, sans interruption (26/11)
+
+Course complète avec les défauts (60 fps, tearing, `VICTORY_INPLACE=1`),
+3 min 09 d'affilée, **aucune panique, aucun device perdu, le jeu ne
+s'arrête pas**. Les défauts sont donc sains sur la durée ; c'est la
+mémoire qui est le limiteur.
+
+- images : 4 au-dessus de 55 fps, 45 entre 29 et 55, 40 en dessous de 29 ;
+  **médiane 29,9 fps, meilleure 60,0** (le plafond demandé).
+- mémoire privée : **8 749 MB au début, 24 923 MB à la fin**, RAM libre du
+  PC de 15 375 à ~10 400 MB. Le poste est celui du §16 (les textures
+  hôtes), pas les copies de tampons.
+- le budget de la carte baisse (14 145 → 13 878 MB) quand Windows la
+  réclame, ce qui confirme que la carte n'est pas la ressource à pousser
+  tant que les textures restent dans le PC.
+
+### 17.1 Ce qu'il faut faire ensuite, dans l'ordre
+
+1. **Textures hôtes que le titre ne relit jamais** (2 029 MB au milieu du
+   chargement, ~3,7 GB en jeu) : les lâcher une fois la passe qui les lit
+   finie, ou les mettre en mémoire carte (7,7 GB libres).
+2. **Textures hôtes que le titre écrit** : réutiliser la copie existante
+   quand la même adresse est réécrite, au lieu d'en refaire une.
+3. `VICTORY_INPLACE_POOL` (#772) : 886 tas refusés par le noyau (« view
+   memory or not private memory committed whole »), 80 fenêtres placées
+   sur 966 — c'est l'item 4 demandé.
+4. Les images lourdes : 30 ms de passe sur le tas, 20 ms de rafraîchissement
+   de textures, 83 ms d'attente de la carte par image.
