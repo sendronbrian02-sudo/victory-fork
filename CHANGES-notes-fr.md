@@ -691,3 +691,47 @@ Le code est revenu à l'état d'avant : rien n'est poussé pour ce point.
 2. **`victory warm`** (pipelines d'avance).
 3. Les leviers du fork AMD : `CARD_BUFFERS_MIN_KB=64`, `UP_QUEUE`,
    `THIN`, `CARD_STEPS`.
+
+## 23. Le vrai bilan : la RAM qui monte, à partir du moment où le jeu tourne (26/11)
+
+Course de 4 min, tout par défaut, `VICTORY_INPLACE=1`, après l'intro
+(l'utilisateur a raison : avant, c'est le lancement, ça ne compte pas).
+
+| Temps depuis le début du jeu | Mémoire privée |
+|---|---|
+| 0 s | 7 589 MB |
+| 60 s | 10 720 MB |
+| 120 s | 12 107 MB |
+| 180 s | 13 145 MB |
+| 240 s | 14 902 MB |
+| fin (300 s) | **14 307 MB** (+6 718 MB en 5 min) |
+
+Soit **~1,3 GB par minute en jeu**, avec un ralentissement visible après
+2 min (la courbe s'aplatit : le sweep commence à rattraper). C'est ce chiffre
+qu'il faut faire baisser, et c'est exactement ce que la **résidence** de
+cool_fox traite (leur journal : la même pression mémoire sur 5090 32 GB,
+avec des `E_OUTOFMEMORY` avant, zéro après).
+
+## 24. « Recopier cool_fox » : ce que ça veut dire exactement
+
+Comparaison mesurée entre notre arbre et `carlm125/cool_fox` :
+
+- nos fichiers `.rs` font **147 876 lignes**, les leurs **187 099** ;
+- mais la différence **entre notre base commune et leur dernier commit**
+  n'est que de **31 fichiers et 3 255 lignes ajoutées** : tout le reste de
+  leur volume vient des fichiers ajoutés d'un bloc (modules séparés,
+  tests) qui ne se remplacent pas comme ça.
+
+Les 31 fichiers, par poids : `draw.rs` (+633), `descriptor/host.rs` (+446),
+`host.rs` (+353), `emit/valu_tests.rs` (+334, des tests), `compose.rs`
+(+325, nouveau : deux plans présentés en une image, Series S),
+`residency.rs` (+201, nouveau), `texture.rs` (+148), `emit/mod.rs` (+113),
+`resource.rs` (+108), `pipeline/make.rs` (+88), `pool.rs` (+86),
+`queue.rs` (+84), `texture/ahead.rs` (+64), `emit/lower.rs` (+62).
+
+Un remplacement en bloc casserait nos 23 correctifs propres (60 fps,
+`SHOW_NEW_LATER`, garde des lanes, `INDIRECT_REST`, `SlotMake`, fence par
+ressource, stats mémoire) : leurs fichiers ne les contiennent pas. La façon
+sûre de tout récupérer est donc **fichier par fichier, avec une mesure
+après chacun**, en commençant par `residency.rs` (le plus autonome et le
+plus utile pour la RAM).
