@@ -535,3 +535,30 @@ Contrairement au principe proposé, `translate` ne lit **que des shaders**
 demande, pas cet outil. Passer `textures.rpf` à `translate` ne donnerait
 rien. Le gain côté textures viendra du §16 (lâcher les copies de textures
 que le titre ne relit jamais) et non d'une pré-cuisson.
+
+## 19. Les textures : ce que la mesure a écarté (26/11, suite)
+
+- Les copies ne naissent pas hors des slots (compteur `in_slot_make` :
+  **0** sur une course entière) : chaque copie de texture existe parce
+  qu'un slot la regarde.
+- Les slots qui gardent une ancienne vue pendant que le titre en fait une
+  neuve : 4 000 fois en trois minutes, 3 044 MB, presque tout en
+  **placé** (l'ancienne vue ne tient donc pas de copie).
+- Les envois sautés (25 370) sont tous de textures **placées** : le
+  raccourci « le titre a écrit sa mémoire après l'hôte » ne concerne pas
+  les copies, il concerne les textures que le titre remplit lui-même.
+
+Conclusion : **toutes les copies non placées sont lues au moins une fois**
+par la carte. Elles ne sont donc pas du poids mort, et le « lâcher quand
+le titre ne relit pas » du §16 est faux sur cette course : elles restent
+parce que leur texture reste.
+
+### 19.1 Ce qui reste à faire, et qui est mesuré
+
+La base d'une course de 4 min (tout par défaut) : les copies du titre
+passent de 407 (245 MB) après le chargement à **9 173 (4 253 MB)** en jeu,
+et la mémoire privée de 8 079 à 21 827 MB. Le vrai levier n'est pas de
+lâcher (rien n'est orphelin), c'est de **ne pas garder 4,2 GB en mémoire du
+PC pour des copies que la carte lit** : les mettre en mémoire de la carte
+(7,7 GB libres) au-delà d'un seuil, et faire baisser ce que la copie coûte
+en place.
