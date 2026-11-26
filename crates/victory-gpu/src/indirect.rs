@@ -58,6 +58,9 @@ RWByteAddressBuffer dst_args : register(u0);
 // records run empty.
 RWByteAddressBuffer budget : register(u1);
 static const uint BUDGET = 1u << 27;
+// Whether a record that does not fit takes the rest of the budget
+// (`VICTORY_INDIRECT_REST=1`; off: it takes nothing).
+static const uint REST = REST_VALUE;
 // The vertices or indices an instance from which a draw record runs empty.
 static const uint MOST_DRAW = 1u << 23;
 // Groups of one dispatch; more run empty.
@@ -189,7 +192,13 @@ void main(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex) {
             uint fit = 1;
             if (c > 0) {
                 fit = (at < BUDGET && BUDGET - at >= c) ? 1u : 0u;
-                at = (at >= BUDGET || BUDGET - at <= c) ? BUDGET : (at + c);
+                // A record that does not fit takes nothing (REST = 0): the
+                // next one that fits runs. Taking the rest (REST = 1) let one
+                // garbage record empty its whole list, and every later draw
+                // of it was lost (carlm125/cool_fox f4b48ad).
+                if (fit != 0 || REST != 0) {
+                    at = (at >= BUDGET || BUDGET - at <= c) ? BUDGET : (at + c);
+                }
             }
             fits[k] = fit;
         }
@@ -253,7 +262,25 @@ fn make() -> windows::core::Result<Clamp> {
 }
 
 fn make_for(device: &ID3D12Device) -> windows::core::Result<Clamp> {
-    make_from(device, SOURCE)
+    make_from(device, &source())
+}
+
+/// Whether a record that does not fit takes the rest of its list's budget
+/// (`VICTORY_INDIRECT_REST=1`; off: it takes nothing and the next record
+/// that fits runs). Taking the rest let one garbage record empty a whole
+/// list, and every later draw of it was lost, which is what made trees and
+/// far buildings flicker (carlm125/cool_fox `f4b48ad`, on an RTX 5090).
+fn rest() -> u32 {
+    u32::from(std::env::var("VICTORY_INDIRECT_REST").is_ok_and(|v| v == "1"))
+}
+
+/// [`SOURCE`] with `REST` as the environment asks (cached: the clamp is
+/// compiled once).
+fn source() -> String {
+    static SOURCE_TEXT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SOURCE_TEXT
+        .get_or_init(|| SOURCE.replace("REST_VALUE", &rest().to_string()))
+        .clone()
 }
 
 /// The clamp compiled from `source` (ours, or in the benchmark the one it
