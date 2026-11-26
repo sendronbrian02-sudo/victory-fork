@@ -259,6 +259,14 @@ pub(crate) fn card_hash_bytes(size: u64) -> u64 {
 /// host has what it takes (`Host::card_ready`).
 fn card_for(size: u64) -> Option<ID3D12Resource> {
     if !cards() {
+        // Said once a second at most: the switch is off, so the memory of a
+        // copy stays in the PC's.
+        static OFF: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let now = crate::host::now_ms();
+        let last = OFF.load(Ordering::Relaxed);
+        if now >= last + 1_000 && OFF.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            tracing::info!("no card copy for a title buffer of {} KiB: VICTORY_CARD_BUFFERS is 0", size >> 10);
+        }
         return None;
     }
     let (least, most) = card_limits();
@@ -267,6 +275,12 @@ fn card_for(size: u64) -> Option<ID3D12Resource> {
     }
     let host = host()?;
     if !host.card_ready() {
+        static NOT_READY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let now = crate::host::now_ms();
+        let last = NOT_READY.load(Ordering::Relaxed);
+        if now >= last + 1_000 && NOT_READY.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            tracing::info!("no card copy for a title buffer of {} KiB: the host says the card is not ready for one", size >> 10);
+        }
         return None;
     }
     // Only while the card has room: with this copy on it, a fifth of the

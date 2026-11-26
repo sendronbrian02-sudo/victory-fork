@@ -414,3 +414,47 @@ Les plus grosses allocations privées : **346 blocs de 32 MB write-combined
    (47 ms) restent les deux premiers postes ; la ligne « heap buffers »
    dit combien de temps passe dans la passe des textures choisies par index.
 4. Manette PS5 et retour de force : à vérifier à la main.
+
+## 16. Où va la mémoire, mesuré sur une course de 4 min (26/11)
+
+Course avec `VICTORY_CARD_BUFFERS_MB=4096`, défauts par ailleurs, 3 min 58,
+0 panique, 0 device perdu.
+
+| | début | fin |
+|---|---|---|
+| mémoire privée du processus | 8 744 MB | 14 824 MB |
+| RAM libre sur le PC | 16 035 MB | 10 862 MB |
+| textures hôtes | 610 (848 MB) | **9 238 (5 766 MB)** |
+| dont côté carte, jamais envoyé au titre | 433 (2 029 MB) | **~8 500 (3 729 MB)** |
+| copies de tampons du titre | 1 (174 MB) | 4 (186 MB) |
+| tampons en mémoire carte | 56 (416 MB) | 376 (1 206 MB) |
+| place sur la carte | in use 50 MB | in use 7 490 MB / budget 15 211 |
+
+Le vrai poste n'est donc pas là où le premier regard portait : les copies
+de tampons restent à 186 MB. **Ce sont les textures que l'hôte fabrique
+pour le compte du moteur, et garde en mémoire du PC alors qu'elles ne sont
+jamais relues par le titre, qui font les 4,9 GB de croissance.**
+
+Détail : 8 803 de ces copies vivantes (3 729 MB) sont dites « placées »,
+c'est-à-dire lues ou écrites par le titre ; 57 seulement ne le sont pas,
+et le balayage n'en a fait revenir que 274 (291 MB) depuis le début. Le
+titre écrit dans 2 116 de leurs pages, et la même adresse physique en
+change : à chaque fois une nouvelle copie d'hôte est faite et l'ancienne
+reste jusqu'à ce que le balayage la voie idle — mais elle n'est idle
+jamais que des fenêtres, pas des textures placées.
+
+### 16.1 Ce que ça implique, dans l'ordre
+
+1. **Textures hôtes des cibles rendues par le GPU (2 029 MB) que le titre
+   ne relit jamais** : si le titre ne les relit pas, leur copie ne sert
+   qu'à la carte ; une fois le rendu fini et lu par ses passes, elle peut
+   être lâchée (ou déplacée en mémoire carte, 7,7 GB libres). C'est le
+   premier gain, et il ne touche pas au rendu.
+2. **Textures hôtes que le titre écrit (3 729 MB « placées »)** : la même
+   adresse réécrite fait une copie neuve ; il faut réutiliser celle qui
+   existe au lieu d'en rendre une autre.
+3. `VICTORY_INPLACE_POOL` (#772) : 420 refus de placement, 918 plus tôt ;
+   les tampons de plus de 64 Ko restent à faire (item 4).
+4. Le plafond des copies carte (`VICTORY_CARD_BUFFERS_MB`) n'était pas la
+   contrainte : à 4 096 MB, 376 tampons seulement y vont (1 206 MB), le
+   reste des copies restant dans le PC.
