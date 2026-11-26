@@ -384,6 +384,17 @@ pub(crate) static PLANES: [std::sync::atomic::AtomicU64; 3] =
 /// there have been, and their bytes.
 static OTHER_MADE: [std::sync::atomic::AtomicU64; 3] = [const { std::sync::atomic::AtomicU64::new(0) }; 3];
 
+/// The bytes a host resource of ours holds, by its description (for the
+/// memory line: what a slot that still shows an old view keeps alive).
+#[cfg(all(windows, feature = "diagnostics"))]
+pub(crate) fn host_bytes_of(resource: &windows::Win32::Graphics::Direct3D12::ID3D12Resource) -> u64 {
+    // SAFETY: a live resource, read as the description's own words (the
+    // two structures have the same layout, 56 bytes).
+    let desc = unsafe { resource.GetDesc() };
+    let words = unsafe { std::ptr::from_ref(&desc).cast::<[u32; 14]>().read_unaligned() };
+    crate::resource::placed_bytes(&words).unwrap_or(0)
+}
+
 /// The colour twin of title texture `this`, if it has one.
 #[cfg(windows)]
 pub(crate) fn twin(this: This) -> Option<std::sync::Arc<Twin>> {

@@ -2054,6 +2054,29 @@ impl HostHeap {
                     .is_some_and(|old| same_placed_texture(&old, &view))
             {
                 KEPT_VIEWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                // The slot still shows the old view, and so keeps the host
+                // copy it views. Counted: a texture the title streams in
+                // again and again leaves a copy behind each time the old
+                // view's texture is let go and another made.
+                let shown = self.kept.lock().unwrap_or_else(|e| e.into_inner()).get(index as usize).cloned().flatten();
+                let Some(shown) = shown else {
+                    return Some(view);
+                };
+                let size = crate::resource::host_bytes_of(&shown);
+                // Every thousandth, and the first ten: this is a hot path.
+                let n = KEPT_FOR_COPY[0].fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                if n <= 10 || n.is_multiple_of(1_000) {
+                    tracing::info!(
+                        "a slot kept showing its old view while the title made a new one: {} times so far, {} MB held by \
+                         the views the slots show (slot {index} holds {} MB; the title's view of the texture now starts \
+                         at another level, or the texture's memory changed)",
+                        n,
+                        KEPT_FOR_COPY[1].fetch_add(size, std::sync::atomic::Ordering::Relaxed) >> 20,
+                        size >> 20
+                    );
+                } else {
+                    KEPT_FOR_COPY[1].fetch_add(size, std::sync::atomic::Ordering::Relaxed);
+                }
                 return Some(view);
             }
             let claim = if later { 0 } else { key };
@@ -2789,6 +2812,11 @@ fn twin_uav(
 
 /// Makes the host descriptor for `view` at `at`: the host resource it
 /// views, or `None` if it cannot.
+/// For the memory line: how many slots kept showing their old view while
+/// the title made a new one, and the bytes of the resources they show.
+static KEPT_FOR_COPY: [std::sync::atomic::AtomicU64; 2] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 2];
+
 fn make(view: &View, at: D3D12_CPU_DESCRIPTOR_HANDLE) -> Option<Kept> {
     // A slot is the reason a title texture's host copy is made at all: the
     // memory line tells the two apart (`crate::host::in_slot_make`).

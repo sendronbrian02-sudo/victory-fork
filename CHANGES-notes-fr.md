@@ -487,3 +487,51 @@ mémoire qui est le limiteur.
    sur 966 — c'est l'item 4 demandé.
 4. Les images lourdes : 30 ms de passe sur le tas, 20 ms de rafraîchissement
    de textures, 83 ms d'attente de la carte par image.
+
+## 18. Les shaders du jeu, tous, passé au traducteur (26/11)
+
+Commande (celle que l'utilisateur proposait, avec le bon nom) :
+
+```
+.\target\release\victory.exe translate --list --jobs 8 "C:\victory-data\game\TEST\shaders.rpf"
+```
+
+Archive brute du jeu : 411 695 600 octets, lue directement (les conteneurs
+sont décompressés dans `shaders.rpf`). Il n'y a pas de sous-commande
+`shaders` : c'est `translate`, et `--warm` transforme en plus le résultat en
+cache pour le run.
+
+**Résultat :**
+
+| | |
+|---|---|
+| conteneurs trouvés | 26 503 (614 doublons passés) |
+| programmes traduits | **26 084 sur 26 084** (40 597 693 instructions IR) |
+| structures | 26 084 (32,5 M instructions vectorielles, 791 463 gardées) |
+| ressources suivies | 25 889 sur 26 084 |
+| E/S élevées | 14 247 sur 14 247 (vertex et pixel) |
+| DXIL émis | 14 247/14 247 vertex+pixel, **2 679/2 682 compute**, 8 765/8 765 mesh |
+| géométrie | 195 programmes, 195 E/S élevées, 0 arrêté |
+
+**Ce qui ne passe pas encore** (c'est là qu'est le travail) :
+
+- 195 × `ES record: an LDS access of the ES half other than a record write`
+  (les `VS_VoxelizeGeneric_*`, le voxelizer) ;
+- 195 × `resources: an address with an untracked high half` (même famille,
+  `GS_VoxelizeGeneric_*`) ;
+- 3 × `emit: a lane mask holding lanes elsewhere read as data`
+  (`CS_TransmissionVolumetrics*`, l'eau).
+
+Les shaders du contenu sont donc tous lus : le jeu peut être pré-cuit en
+entier (`translate --warm`) avant la première image, ce qui supprime les
+traductions pendant le jeu.
+
+### 18.1 Les textures ne sont pas dans `shaders.rpf`
+
+Contrairement au principe proposé, `translate` ne lit **que des shaders**
+(conteneurs DXBC/Xbox, fichiers SGD5). Les textures du jeu sont dans
+`textures.rpf` (192 585 024 octets), `data.rpf`, `common.rpf`,
+`levels.rpf`, `pack/` et `data/` : c'est le layer qui les copie à la
+demande, pas cet outil. Passer `textures.rpf` à `translate` ne donnerait
+rien. Le gain côté textures viendra du §16 (lâcher les copies de textures
+que le titre ne relit jamais) et non d'une pré-cuisson.

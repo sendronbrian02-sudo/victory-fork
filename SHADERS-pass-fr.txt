@@ -1,0 +1,23 @@
+# Les shaders du jeu, tous passés au traducteur (26/11)
+# Commande :
+#   .\target\release\victory.exe translate --list --jobs 8 "C:\victory-data\game\TEST\shaders.rpf"
+#
+# Bilan brut, copié du log :
+containers   26503 (614 duplicates skipped)
+programs     26084 translated of 26084 (40597693 IR instructions)
+structured   26084 of 26084 (32535818 vector instructions, 791463 guarded, 28075 on opaque masks; branches 795624 per lane, 360833 uniform)
+resources    25889 of 26084 tracked (descriptors 2596542 loaded, 126843 built, 174561 constant; 1269812 scalar accesses; 218896 with a computed term)
+  used-resource entries 437642: 187 not traced {"Cbv via Constants": 17, "Cbv via Table": 33, "Sampler via ImmediateSampler": 22, "Srv via Table": 115}; 0 traced parameters not listed
+I/O          14247 of 14247 vertex and pixel programs raised (178572 interpolations, 6888 vertex values; exports {"color": 29217, "depth": 1170, "null": 6476, "param": 9143, "position": 2222, "unread param": 154}, 0 still f16 pairs)
+DXIL         14247 emitted of 14247 vertex and pixel programs; 0 validated, 0 pipelines
+             2679 emitted of 2682 compute programs; 0 validated, 0 pipelines
+             8765 emitted of 8765 mesh programs; 0 validated, 0 pipelines
+
+# Ce qui ne passe pas encore : 195 x "ES record: an LDS access of the ES half
+# other than a record write" (VS_VoxelizeGeneric), 195 x "resources: an
+# address with an untracked high half" (GS_VoxelizeGeneric), 3 x "emit: a
+# lane mask holding lanes elsewhere read as data" (CS_TransmissionVolumetrics).
+#
+# Attention : translate ne lit QUE des shaders. Les textures sont dans
+# textures.rpf, data.rpf, common.rpf, levels.rpf et pack/ : ce n'est pas cet
+# outil qui les sort, c'est le layer qui les copie a la demande.
