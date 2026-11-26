@@ -341,3 +341,76 @@ atteignable avec le présent actuel.
 3. Les images lourdes : 250 ms de textures quand la carte reçoit beaucoup
    de géométrie neuve.
 4. Vérifier à la main la manette PS5 et le retour de force.
+
+## 15. Le plafond 30 fps cassé, la mémoire mesurée (26/11)
+
+### 15.1 Ce n'est pas la cadence d'affichage, c'est le titre
+
+3 buffers seuls ne changent rien (30,0 fps mesuré). La limite venait du
+**titre qui demande au device un intervalle de 33,333 ms** (`frame.rs`,
+`set_interval`, journal « frame interval interval=33.333ms »). Le plafond
+est maintenant réglé par `VICTORY_FRAME_US`, **par défaut 16 667 µs
+(60 fps)** ; à 8 333 (120 fps) quatre images d'affilée sont sorties à
+120,0 / 120,1 / 119,8 / 120,0 fps. Le présent bloquait aussi : il faut
+`VICTORY_TEARING=1` (désormais par défaut) pour que le présent ne
+attende pas le retour du balayage.
+
+Mesure du jour, avec les défauts : 56,4 puis 60,0 / 60,0 fps sur des
+images légères, 30,0 quand une image coûte plus de 16,7 ms, 0 panique,
+0 device perdu.
+
+### 15.2 La mémoire du processus, et où elle va
+
+Nouvelle ligne, toutes les quatre secondes, dans la ligne de cadence
+(`copystat::log_memory_now`) : ensemble de travail, privé, libre sur le PC.
+
+Une session de 3 min 20 : **3 667 MB d'ensemble de travail et 7 972 MB de
+privé au début, 6 908 MB et 12 551 MB à la fin**, soit environ 1,4 GB de
+privé gagné par minute. C'est cette croissance qui termine une longue
+session, pas un plantage.
+
+Avec `VICTORY_MEMORY_MAP_ALWAYS=1`, la carte mémoire du processus donne les
+postes (fin de session, « in memory » = réellement en RAM) :
+
+| poste | réservé | en RAM |
+|---|---|---|
+| tampons partagés avec la carte (write-combined) | 11 428 MB | 2 194 MB |
+| vues des pages du titre | 6 055 MB | 3 077 MB |
+| réserve de pages du titre | 6 236 MB | 0 MB |
+| tas du titre | 4 629 MB | 2 070 MB |
+| segments du tas du processus | 3 037 MB | 3 019 MB |
+| autres allocations privées ≥ 1 MB | 2 656 MB | 2 624 MB |
+| fenêtres de mémoire du titre et blocs de 4 MB | 1 607 MB | 1 537 MB |
+
+Les plus grosses allocations privées : **346 blocs de 32 MB write-combined
+(7 854 MB)**, 39 de 32 MB (1 238 MB), puis des blocs de 5 à 30 MB.
+
+### 15.3 Qui tient la mémoire, et qui ne la lâche pas
+
+- **Copies des cibles de rendu** : 84 vivantes, 596 MB, « jamais lâchées »
+  par le balayage (`resource::let_go_idle`), dont 652 des 1 295 modifiées
+  dans les 30 dernières secondes (2 340 MB) et **643 nommées par une autre
+  de nos références (2 516 MB)** ; 0 tenues par la carte. Même problème de
+  durée de vie qu'une copie de tampon : quelque chose garde son `Arc` (un
+  slot, une liste) et rien ne le relâche. 6,4 GB en 3 min, ~120 nouvelles
+  par seconde.
+- **Fenêtres hors tampons** : 4 161 vivantes, 3 100 MB ; 2 328 MB de
+  fenêtres et **1 148 MB dont le titre a l'adresse GPU**. Le balayage ne
+  peut lâcher que ce que rien ne nomme, et il le fait (2198 MB lâchés en
+  tout sur la session) : le reste est tenu par le titre ou par un slot.
+- **Copies en mémoire carte** : plafonnées à `VICTORY_CARD_BUFFERS_MB`
+  (1024) alors que le budget de la carte laisse 7 733 MB libres. Un
+  message dit maintenant pourquoi une copie n'y va pas.
+
+### 15.4 Ce qu'il reste à faire, dans l'ordre
+
+1. **Cibles de rendu** : trouver qui garde l'`Arc` de leur copie et le
+   relâcher quand la texture n'est plus décrite ; c'est 90 % de la
+   croissance (2 516 MB tenus par une référence de plus sur 84 textures).
+2. **Copies en mémoire carte** : monter `VICTORY_CARD_BUFFERS_MB` (1024 →
+   4096) pour que les tampons de plus de 64 Ko sortent de la RAM partagée ;
+   c'est l'item 4 demandé, et le plafond en est la seule raison.
+3. **Images lourdes** : la carte (60 ms médiane) et le retour carte
+   (47 ms) restent les deux premiers postes ; la ligne « heap buffers »
+   dit combien de temps passe dans la passe des textures choisies par index.
+4. Manette PS5 et retour de force : à vérifier à la main.
