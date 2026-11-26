@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use victory_shader::resource::RootIndexedView;
 use victory_shader::{ResourceType, RootType, UsedResource};
 
-use crate::descriptor::View;
+use crate::descriptor::{TargetKey, View};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::D3D_PRIMITIVE_TOPOLOGY;
 use windows::Win32::Graphics::Direct3D12::*;
@@ -342,6 +342,7 @@ pub(crate) struct State {
     target_handles: Vec<u64>,
     depth_handle: u64,
     targets_set: bool,
+    host_targets: Option<TargetBindings>,
     viewports: Vec<D3D12_VIEWPORT>,
     scissors: Vec<RECT>,
     blend: Option<[f32; 4]>,
@@ -382,6 +383,19 @@ pub(crate) struct State {
     root_uav_slots: std::collections::HashMap<(usize, u64), RootSlot>,
     /// The list ran and its dynamic slots were given back.
     tables_gone: bool,
+}
+
+/// The translated bindings already recorded on the current host list.
+#[derive(Default)]
+struct TargetBindings {
+    colors: Vec<TargetKey>,
+    depth: Option<TargetKey>,
+}
+
+impl TargetBindings {
+    fn matches(&self, colors: impl Iterator<Item = TargetKey>, depth: Option<TargetKey>) -> bool {
+        self.depth == depth && self.colors.iter().copied().eq(colors)
+    }
 }
 
 impl Drop for State {
@@ -730,7 +744,9 @@ impl State {
         self.index = view.copied().unwrap_or_default();
     }
 
-    /// Render targets and depth, set on the host list at once.
+    /// Re-read the title's views even when handles repeat: descriptor heap
+    /// slots can be overwritten in place. Skip only identical host bindings.
+    /// `VICTORY_BIND_CACHE=0` records every binding for comparison.
     pub(crate) fn set_targets(&mut self, list: &HostList, handles: &[u64], depth: u64) {
         let Some(host) = crate::host::host() else {
             return;
@@ -740,7 +756,7 @@ impl State {
         self.depth_handle = depth;
         self.targets_set = true;
         self.targets.clear();
-        let mut rtvs = Vec::new();
+        let mut views = Vec::with_capacity(handles.len());
         for &h in handles {
             let Some(record) = crate::descriptor::rtv_record(h) else {
                 once!(
@@ -749,7 +765,7 @@ impl State {
                 );
                 continue;
             };
-            let Some(texture) = crate::resource::host_resource(record.resource) else {
+            let Some((generation, texture)) = crate::resource::host_binding(record.resource) else {
                 // A typed null view (or a target without a host copy) still
                 // takes its slot: left out, the next live target would move
                 // into it and the pixel shader's outputs reach the wrong
@@ -760,28 +776,46 @@ impl State {
                     .desc()
                     .filter(|d| d.Format.0 != 0 && d.ViewDimension.0 != 0);
                 if let Some(desc) = null {
-                    rtvs.push(host.rtv(None, Some(&desc)));
+                    views.push((record.binding_key(0), None, Some(desc)));
                 }
                 continue;
             };
             self.targets.push(record.resource as usize);
             #[cfg(feature = "diagnostics")]
             crate::capture::note_target(record.resource);
-            rtvs.push(host.rtv(Some(texture), record.desc().as_ref()));
+            views.push((record.binding_key(generation), Some(texture), record.desc()));
         }
         self.depth = 0;
         self.depth_state = DEPTH_WRITE;
         let dsv = crate::descriptor::dsv_record(depth).and_then(|record| {
-            let texture = crate::resource::host_resource(record.resource)?;
+            let (generation, texture) = crate::resource::host_binding(record.resource)?;
+            let desc = record.depth_desc();
             self.depth = record.resource as usize;
-            self.depth_state = depth_state(texture, record.depth_desc().as_ref());
+            self.depth_state = depth_state(texture, desc.as_ref());
             if crate::resource::depth_and_unordered(record.resource) {
                 crate::resource::DEPTH_UNORDERED[1].fetch_add(1, Ordering::Relaxed);
             }
             #[cfg(feature = "diagnostics")]
             crate::capture::note_target(record.resource);
-            Some(host.dsv(texture, record.depth_desc().as_ref()))
+            Some((record.binding_key(generation), texture, desc))
         });
+        static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *CACHE.get_or_init(|| std::env::var_os("VICTORY_BIND_CACHE").is_none_or(|v| v != "0")) {
+            let colors = || views.iter().map(|v| v.0);
+            let depth_key = dsv.as_ref().map(|v| v.0);
+            if self.host_targets.as_ref().is_some_and(|last| last.matches(colors(), depth_key)) {
+                return;
+            }
+            let last = self.host_targets.get_or_insert_with(TargetBindings::default);
+            last.colors.clear();
+            last.colors.extend(colors());
+            last.depth = depth_key;
+        }
+        let rtvs: Vec<_> = views
+            .iter()
+            .map(|(_, texture, desc)| host.rtv(*texture, desc.as_ref()))
+            .collect();
+        let dsv = dsv.map(|(_, texture, desc)| host.dsv(texture, desc.as_ref()));
         // SAFETY: an open list; the views were just made.
         unsafe {
             list.list.OMSetRenderTargets(
@@ -851,6 +885,7 @@ impl State {
         self.host_pipeline = 0;
         self.host_roots = [0; 2];
         self.host_heaps = [0; 2];
+        self.host_targets = None;
         if self.topology_set {
             self.set_topology(list, self.topology);
         }
@@ -1135,8 +1170,7 @@ impl State {
             self.host_pipeline = p.pso.as_raw() as usize;
             list.used_pipeline(&p.name);
             // The title may release the pipeline before it submits the list.
-            list.keep(&p.pso);
-            list.keep(&p.root);
+            list.keep_pipeline(&p.pso, &p.root);
         }
         for stage in &p.stages {
             let t = stage.translated();
@@ -2561,7 +2595,7 @@ impl State {
             let draws: u32 = census.1.values().sum();
             if draws > 0 {
                 let mut rects: Vec<([i32; 4], u32)> = census.1.iter().map(|(r, n)| (*r, *n)).collect();
-                rects.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+                rects.sort_unstable_by_key(|a| std::cmp::Reverse(a.1));
                 let scissors: Vec<String> = rects
                     .iter()
                     .take(5)
@@ -3250,38 +3284,10 @@ impl State {
                 if let Some((s, at)) = &counter {
                     s.refresh(list, *at, 4);
                 }
-                // Bounded first: the clamp binds a compute pipeline of its
-                // own and copies clamped active records into a scratch
-                // buffer at offset 0.
+                // The clamp stays in the consuming list. The title can
+                // produce arguments or counts on the GPU earlier in this list.
                 let count_arg = counter.as_ref().map(|(s, at)| (&s.buffer, s.offset(*at)));
-                // More than the record asked for: a window clamped ahead,
-                // whose unfilled slots must not spend the list's budget.
-                // Clamps of a run of draws go to a list before the one that
-                // draws (`crate::indirect::Clamps`): a pass of ours between
-                // two draws turns the card from drawing to compute and back,
-                // and this costs one switch a run (from Belobug's fork,
-                // where 225 ms of card time a frame became about 80 in a
-                // scene of 9,000 draws). A window clamped ahead is a pass of
-                // its own and stays here.
-                let hoisted = !windowed
-                    && crate::indirect::hoisting()
-                    && matches!(kind, DRAW | INDEXED | DISPATCH | MESH);
-                let mut hoisted_at = None;
-                let bounded = if hoisted {
-                    let mut slot = list.clamps.lock().unwrap_or_else(|e| e.into_inner());
-                    if slot.is_none() {
-                        *slot = crate::indirect::Clamps::new(list).map(Box::new);
-                    }
-                    match slot.as_mut() {
-                        Some(clamps) => {
-                            let made =
-                                crate::indirect::bound_before(clamps, (&args.buffer, offset), count_arg, (kind, step, records));
-                            hoisted_at = made.as_ref().map(|(_, at)| *at);
-                            made.map(|(buffer, _)| buffer)
-                        }
-                        None => None,
-                    }
-                } else if windowed && records > 1 {
+                let bounded = if windowed && records > 1 {
                     crate::indirect::bound_ahead(list, (&args.buffer, offset), (kind, step, records))
                 } else {
                     crate::indirect::bound(list, (&args.buffer, offset), count_arg, (kind, step, records))
@@ -3300,7 +3306,7 @@ impl State {
                     // the record drawn before it.
                     if (6..=8).contains(&why_not) {
                         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                        if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 256 == 0 {
+                        if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed).is_multiple_of(256) {
                             let (last_copy, last_offset) = self.last_indirect;
                             tracing::info!(
                                 "a window miss (one in 256): cause {why_not}, kind {kind}, stride {stride}, buffer {} offset {offset:#x} ({} left); the command before it on the list: buffer {last_copy} offset \
@@ -3327,7 +3333,7 @@ impl State {
                     records,
                     scratch: bounded.clone(),
                 });
-                (bounded, hoisted_at.unwrap_or(0))
+                (bounded, 0)
             }
         };
         #[cfg(feature = "diagnostics")]
@@ -3720,6 +3726,29 @@ pub(crate) fn depth_bounds(list: &HostList, min: f32, max: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn render_target_cache_uses_view_contents_order_and_host_identity() {
+        let mut slot = [0u64; 16];
+        let handle = slot.as_mut_ptr() as u64;
+        let reset_view = |format| {
+            let desc = [format, 4, 0, 0, 0, 0];
+            crate::descriptor::create_rtv(std::ptr::null(), std::ptr::null(), &desc, handle);
+            crate::descriptor::rtv_record(handle).unwrap()
+        };
+        let first = reset_view(28);
+        let color = first.binding_key(1);
+        let null = first.binding_key(0);
+        let cache = TargetBindings { colors: vec![null, color], depth: Some(color) };
+        assert!(cache.matches([null, color].into_iter(), Some(color)));
+        assert!(!cache.matches([color, null].into_iter(), Some(color)));
+        assert!(!cache.matches([color].into_iter(), Some(color)));
+        assert!(!cache.matches([null, color].into_iter(), None));
+        assert!(!cache.matches([null, first.binding_key(2)].into_iter(), Some(color)));
+        // The slot's address is unchanged; only the descriptor was rewritten.
+        let rewritten = reset_view(29).binding_key(1);
+        assert!(!cache.matches([null, rewritten].into_iter(), Some(color)));
+    }
 
     #[test]
     fn a_lone_record_opens_a_window_at_the_remembered_step() {

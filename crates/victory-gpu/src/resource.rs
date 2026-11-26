@@ -1121,6 +1121,8 @@ struct Resource {
 #[cfg(windows)]
 pub(crate) struct HostTexture {
     pub(crate) texture: windows::Win32::Graphics::Direct3D12::ID3D12Resource,
+    /// Identity independent of pointer reuse after a host copy is evicted.
+    generation: u64,
     pub(crate) state: std::sync::atomic::AtomicU32,
     /// The bytes the host gives it.
     bytes: u64,
@@ -1944,6 +1946,12 @@ fn host_bytes(texture: &windows::Win32::Graphics::Direct3D12::ID3D12Resource) ->
 
 #[cfg(windows)]
 impl HostTexture {
+    fn next_generation() -> u64 {
+        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        NEXT.fetch_add(1, Relaxed)
+    }
+
     fn new(texture: windows::Win32::Graphics::Direct3D12::ID3D12Resource, state: u32) -> HostTexture {
         use std::sync::atomic::Ordering::Relaxed;
         let bytes = host_bytes(&texture);
@@ -1951,6 +1959,7 @@ impl HostTexture {
         HOST_TEXTURES[1].fetch_add(bytes, Relaxed);
         HostTexture {
             texture,
+            generation: Self::next_generation(),
             state: std::sync::atomic::AtomicU32::new(state),
             bytes,
             filled: false,
@@ -1968,6 +1977,7 @@ impl HostTexture {
         HOST_TEXTURES[0].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         HostTexture {
             texture,
+            generation: Self::next_generation(),
             state: std::sync::atomic::AtomicU32::new(state),
             bytes: 0,
             filled: false,
@@ -2015,6 +2025,14 @@ pub(crate) fn host_transition(this: This, wanted: u32) -> Option<(*mut c_void, u
 pub(crate) fn host_resource<'a>(
     this: This,
 ) -> Option<&'a windows::Win32::Graphics::Direct3D12::ID3D12Resource> {
+    host_binding(this).map(|(_, texture)| texture)
+}
+
+/// The identity and texture of one host copy, resolved together.
+#[cfg(windows)]
+pub(crate) fn host_binding<'a>(
+    this: This,
+) -> Option<(u64, &'a windows::Win32::Graphics::Direct3D12::ID3D12Resource)> {
     if this.is_null() {
         return None;
     }
@@ -2024,7 +2042,7 @@ pub(crate) fn host_resource<'a>(
     // `let_go_idle` takes it: only from a texture the title fills, that no
     // list and no slot holds and that nothing asked for in seconds (the
     // asking just made is noted under the same lock).
-    Some(unsafe { &*std::ptr::from_ref(&host.texture) })
+    Some((host.generation, unsafe { &*std::ptr::from_ref(&host.texture) }))
 }
 
 /// A title texture's host copy, shared, for a list to hold.

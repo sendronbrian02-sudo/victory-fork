@@ -23,6 +23,9 @@ use windows::Win32::Graphics::Direct3D12::*;
 use crate::host::{HostList, host};
 use crate::object::This;
 
+#[cfg(feature = "diagnostics")]
+mod dump;
+
 macro_rules! once {
     ($($arg:tt)*) => {{
         static ONCE: std::sync::Once = std::sync::Once::new();
@@ -37,6 +40,8 @@ pub(crate) struct Staging {
     /// Its bytes.
     #[cfg(feature = "diagnostics")]
     size: u64,
+    #[cfg(feature = "diagnostics")]
+    dump: Option<dump::Texture<'static>>,
     data: *mut u8,
     footprints: Vec<D3D12_PLACED_SUBRESOURCE_FOOTPRINT>,
     rows: Vec<u32>,
@@ -1235,6 +1240,13 @@ impl Staging {
                 tracing::warn!(?e, mip, slice, "texture not detiled");
                 return;
             }
+            #[cfg(feature = "diagnostics")]
+            if let Some(dump) = &self.dump
+                && dump.wants(mip)
+                && (sparse_levels() || committed(self.memory.wrapping_add(from), len))
+            {
+                dump.save(mip, linear, pitch, rows);
+            }
         }
     }
 }
@@ -1583,6 +1595,8 @@ fn staging(resource: This, texture: &ID3D12Resource) -> Option<Arc<Staging>> {
         buffer,
         #[cfg(feature = "diagnostics")]
         size: total,
+        #[cfg(feature = "diagnostics")]
+        dump: dump::Texture::new(&d),
         data,
         footprints,
         rows,

@@ -116,6 +116,10 @@ fn header(frames: u64) -> [u8; 44] {
 }
 
 fn record(pid: u32, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    victory_core::ensure_outside_repo(path)?;
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
     // SAFETY: COM calls with parameters built here; buffers are used only
     // between `GetBuffer` and `ReleaseBuffer`.
     unsafe {

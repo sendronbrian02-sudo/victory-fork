@@ -508,16 +508,21 @@ fn lines(frames: &[Frame], usual: f64, seconds: f64) -> Vec<String> {
     let each: Vec<String> = frames.iter().map(|f| format!("{:.0}", f.us / 1e3)).collect();
     let shortest = frames.iter().map(|f| f.us).fold(f64::INFINITY, f64::min);
     let longest = frames.iter().map(|f| f.us).fold(0.0, f64::max);
+    let mut times: Vec<_> = frames.iter().map(|f| f.us).collect();
+    times.sort_by(f64::total_cmp);
+    let p99 = times[(times.len() * 99).div_ceil(100) - 1];
+    let over_budget = times.iter().filter(|&&us| us > 1_000_000.0 / 30.0).count();
     let mut out = vec![format!(
         "frame times: {} frames in {seconds:.1} s: shortest {:.0} ms, median {:.0}, longest {:.0}; {} long (over {:.0} ms, \
-         the usual frame of the last {RECENT} being {:.0}); each: {}",
+         the usual frame of the last {RECENT} being {:.0}); p99 {:.2} ms, {over_budget} over 33.33 ms; each: {}",
         frames.len(),
         shortest / 1e3,
-        median(frames.iter().map(|f| f.us)) / 1e3,
+        times[times.len() / 2] / 1e3,
         longest / 1e3,
         long.len(),
         over / 1e3,
         usual / 1e3,
+        p99 / 1e3,
         each.join(" ")
     )];
     if !plain.is_empty() {
@@ -618,6 +623,7 @@ mod tests {
         assert_eq!(out.len(), 3, "{out:#?}");
         assert!(out[0].starts_with("frame times: 5 frames in 1.0 s: shortest 140 ms, median 150, longest 400; 1 long (over 225 ms"), "{}", out[0]);
         assert!(out[0].ends_with("each: 150 160 140 400 150"), "{}", out[0]);
+        assert!(out[0].contains("p99 400.00 ms, 5 over 33.33 ms"), "{}", out[0]);
         // The usual frame is the mean of the four that are not long.
         assert!(out[1].starts_with("usual frame (the mean of 4 not long): 150 ms |"), "{}", out[1]);
         assert!(out[1].contains("in the present call 15.0 "), "{}", out[1]);

@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+victory-core = { workspace = true, optional = true }
 victory-gpu.workspace = true
 victory-loader.workspace = true
 victory-pe.workspace = true
@@ -52,7 +53,7 @@ tempfile.workspace = true
 
 [features]
 # Debugging switches (scripted keys and the like).
-diagnostics = ["victory-gpu/diagnostics", "victory-loader/diagnostics", "dep:windows", "dep:windows-core"]
+diagnostics = ["victory-gpu/diagnostics", "victory-loader/diagnostics", "dep:victory-core", "dep:windows", "dep:windows-core"]
 
 [lints]
 workspace = true

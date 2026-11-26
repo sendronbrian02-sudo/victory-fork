@@ -2,11 +2,12 @@
 //! what it cannot handle yet is tallied (decision 0003).
 
 use std::collections::{BTreeMap, HashSet};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use victory_shader::emit::host::{self, Host};
 use victory_shader::emit::{self, validator::Validator};
 use victory_shader::structure::{self, Atom, LaneExit};
@@ -144,12 +145,78 @@ impl Tally {
 type Kept = std::sync::Arc<Mutex<Vec<(String, emit::HostShader)>>>;
 
 /// The optional checks after emission, one set per thread.
-struct Checks {
+struct Checks<'a> {
     /// Shaders named in `VICTORY_PAIRS` (`vs+ps,...`, label substrings),
     /// kept to build those pipelines after the walk.
     keep: Option<Kept>,
     validator: Option<Validator>,
     host: Option<(Host, emit::HostShader)>,
+    export: Option<&'a DxilExport>,
+}
+
+struct DxilExport {
+    directory: PathBuf,
+    saved: AtomicUsize,
+    error: Mutex<Option<anyhow::Error>>,
+}
+
+/// Legacy debugging exports are also game-derived data.
+fn diagnostic_dump(path: &Path, bytes: impl AsRef<[u8]>) {
+    let result = (|| -> Result<()> {
+        victory_core::ensure_outside_repo(path)?;
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, bytes).map_err(Into::into)
+    })();
+    if let Err(error) = result {
+        eprintln!("shader dump not saved at {}: {error}", path.display());
+    }
+}
+
+impl DxilExport {
+    fn open(directory: &Path) -> Result<Self> {
+        victory_core::ensure_outside_repo(directory)?;
+        std::fs::create_dir_all(directory)
+            .with_context(|| format!("creating {}", directory.display()))?;
+        Ok(Self {
+            directory: directory.canonicalize()?,
+            saved: AtomicUsize::new(0),
+            error: Mutex::new(None),
+        })
+    }
+
+    fn save(&self, shader: &emit::HostShader) {
+        let name = format!("{:?}-{}.dxil", shader.stage, blake3::hash(&shader.dxil));
+        let path = self.directory.join(name);
+        match self.write(&path, &shader.dxil) {
+            Ok(true) => {
+                self.saved.fetch_add(1, Ordering::Relaxed);
+            }
+            Ok(false) => {}
+            Err(error) => {
+                lock(&self.error)
+                    .get_or_insert_with(|| error.context(format!("exporting {}", path.display())));
+            }
+        }
+    }
+
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<bool> {
+        victory_core::ensure_outside_repo(path)?;
+        let mut file = tempfile::NamedTempFile::new_in(&self.directory)?;
+        file.write_all(bytes)?;
+        match file.persist_noclobber(path) {
+            Ok(_) => Ok(true),
+            Err(err) if err.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                anyhow::ensure!(
+                    std::fs::read(path)? == bytes,
+                    "an existing file has different contents"
+                );
+                Ok(false)
+            }
+            Err(err) => Err(err.error.into()),
+        }
+    }
 }
 
 /// `translate --warm <file>`: the containers whose hash the file names are
@@ -239,8 +306,21 @@ pub fn run(
     pipelines: bool,
     list: bool,
     jobs: Option<usize>,
+    export_dxil: Option<&Path>,
 ) -> Result<()> {
-    let paths = crate::default_paths(paths)?;
+    let mut paths = crate::default_paths(paths)?;
+    let export = export_dxil.map(DxilExport::open).transpose()?;
+    let export = export.as_ref();
+    if let Some(export) = export {
+        paths = paths
+            .iter()
+            .map(std::fs::canonicalize)
+            .collect::<std::io::Result<_>>()?;
+        anyhow::ensure!(
+            !paths.iter().any(|path| path.starts_with(&export.directory)),
+            "shader inputs must be outside the export directory"
+        );
+    }
     // `VICTORY_HOST_MAX_WAVE=32`: translate as for a host whose waves have
     // at most 32 lanes (as the runtime does on such a card).
     if let Some(n) = std::env::var("VICTORY_HOST_MAX_WAVE").ok().and_then(|v| v.parse().ok()) {
@@ -272,6 +352,7 @@ pub fn run(
     for root in &paths {
         for entry in walkdir::WalkDir::new(root)
             .into_iter()
+            .filter_entry(|entry| export.is_none_or(|e| entry.path() != e.directory))
             .filter_map(Result::ok)
         {
             if !entry.file_type().is_file() || entry.metadata().map_or(0, |m| m.len()) > MAX_FILE {
@@ -289,11 +370,19 @@ pub fn run(
                             list,
                             ..Tally::default()
                         };
+                        let validator = validate.then(|| Validator::load(dll.as_deref())).transpose();
                         let mut checks = Checks {
                             keep: (!pairs.is_empty()).then(|| kept.clone()),
-                            validator: validate
-                                .then(|| Validator::load(dll.as_deref()).ok())
-                                .flatten(),
+                            export: match (&validator, export) {
+                                (Err(error), Some(export)) => {
+                                    lock(&export.error).get_or_insert_with(|| {
+                                        anyhow::anyhow!("loading DXIL validator in worker: {error}")
+                                    });
+                                    None
+                                }
+                                _ => export,
+                            },
+                            validator: validator.ok().flatten(),
                             host: pipelines
                                 .then(|| Host::new(false).ok().map(|h| (h, host::stub_ps())))
                                 .flatten(),
@@ -384,6 +473,16 @@ pub fn run(
     for (reason, (n, example)) in failed {
         println!("  {n:>7}  {reason}  (e.g. {example})");
     }
+    if let Some(export) = export {
+        println!(
+            "DXIL export  {} new files in {}",
+            export.saved.load(Ordering::Relaxed),
+            export.directory.display()
+        );
+        if let Some(error) = lock(&export.error).take() {
+            return Err(error);
+        }
+    }
     Ok(())
 }
 
@@ -392,7 +491,7 @@ fn translate(
     path: &Path,
     seen: &Mutex<HashSet<blake3::Hash>>,
     t: &mut Tally,
-    checks: &mut Checks,
+    checks: &mut Checks<'_>,
 ) {
     let example = || format!("{}{}", path.display(), source.label());
     let Some(bytes) = source.bytes() else {
@@ -442,8 +541,7 @@ fn translate(
                 .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
                 .take(70)
                 .collect();
-            let _ = std::fs::create_dir_all(dir);
-            let _ = std::fs::write(std::path::Path::new(dir).join(format!("{name}.{hash}.cdxil")), &bytes[..]);
+            diagnostic_dump(&Path::new(dir).join(format!("{name}.{hash}.cdxil")), &bytes[..]);
         }
     }
     if !lock(seen).insert(code) {
@@ -467,14 +565,13 @@ fn translate(
             let was = before.get(reason).copied().unwrap_or(0);
             if *n > was && was < 3 {
                 let stem: String = reason.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).take(60).collect();
-                let _ = std::fs::create_dir_all(&dir);
-                let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{stem}_{was}.cdxil")), &bytes[..]);
+                diagnostic_dump(&Path::new(&dir).join(format!("{stem}_{was}.cdxil")), &bytes[..]);
             }
         }
     }
 }
 
-fn translate_programs(container: &Container, programs: Vec<NativeProgram>, example: &dyn Fn() -> String, t: &mut Tally, checks: &mut Checks) {
+fn translate_programs(container: &Container, programs: Vec<NativeProgram>, example: &dyn Fn() -> String, t: &mut Tally, checks: &mut Checks<'_>) {
     for p in programs {
         t.programs += 1;
         match victory_shader::spill::build(&p) {
@@ -612,7 +709,7 @@ fn census_line(label: &str, native: &NativeProgram, p: &ir::Program, shader: &em
 fn check(
     mut shader: emit::HostShader,
     t: &mut Tally,
-    checks: &mut Checks,
+    checks: &mut Checks<'_>,
     label: impl Fn() -> String,
 ) {
     if let Some(keep) = &checks.keep {
@@ -626,8 +723,8 @@ fn check(
             .chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
             .collect();
-        let _ = std::fs::write(
-            format!("{dir}/{}.dxil", &name[name.len().saturating_sub(100)..]),
+        diagnostic_dump(
+            &Path::new(&dir).join(format!("{}.dxil", &name[name.len().saturating_sub(100)..])),
             &shader.dxil,
         );
     }
@@ -649,10 +746,16 @@ fn check(
         }
     }
     let Some(v) = checks.validator.as_mut() else {
+        if let Some(export) = checks.export {
+            export.save(&shader);
+        }
         return;
     };
     match v.validate(&mut shader.dxil) {
         Ok(()) => {
+            if let Some(export) = checks.export {
+                export.save(&shader);
+            }
             *counter(t, shader.stage, 2) += 1;
             if t.list {
                 t.lines.push(format!("{}  validated", label()));
@@ -678,8 +781,8 @@ fn check(
                             .take(40)
                             .collect::<String>()
                     );
-                    let _ = std::fs::write(format!("{name}.dxil"), &shader.dxil);
-                    let _ = std::fs::write(format!("{name}.txt"), format!("{}\n{text}", label()));
+                    diagnostic_dump(Path::new(&format!("{name}.dxil")), &shader.dxil);
+                    diagnostic_dump(Path::new(&format!("{name}.txt")), format!("{}\n{text}", label()));
                 }
             }
             t.fail(format!("validator: {first}"), label);
@@ -863,4 +966,30 @@ fn tally_structured(program: &ir::Program, s: &structure::Structured, t: &mut Ta
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dxil_export_keeps_existing_files_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let export = DxilExport::open(dir.path()).unwrap();
+        let path = export.directory.join("sample.dxil");
+        assert!(export.write(&path, b"synthetic bytes").unwrap());
+        assert!(!export.write(&path, b"synthetic bytes").unwrap());
+        assert!(export.write(&path, b"different bytes").is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"synthetic bytes");
+    }
+
+    #[test]
+    fn dxil_export_rejects_any_victory_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".victory-root"), "").unwrap();
+        let output = dir.path().join("shaders");
+        assert!(DxilExport::open(&output).is_err());
+        diagnostic_dump(&output.join("legacy.cdxil"), b"synthetic bytes");
+        assert!(!output.exists());
+    }
 }

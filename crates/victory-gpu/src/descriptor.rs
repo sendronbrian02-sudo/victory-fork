@@ -352,7 +352,27 @@ pub(crate) struct RtvRecord {
 const RTV_TAG: u32 = u32::from_le_bytes(*b"vRTV");
 const _: () = assert!(size_of::<RtvRecord>() <= 112);
 
+/// A recorded view and the identity of the resolved host texture (0 for a typed null view).
+#[cfg(windows)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TargetKey {
+    generation: u64,
+    resource: usize,
+    described: u32,
+    desc: [u32; 6],
+}
+
 impl RtvRecord {
+    #[cfg(windows)]
+    pub(crate) fn binding_key(&self, generation: u64) -> TargetKey {
+        TargetKey {
+            generation,
+            resource: self.resource as usize,
+            described: self.described,
+            desc: self.desc,
+        }
+    }
+
     /// The view description in the host's type (the same layout).
     #[cfg(windows)]
     pub(crate) fn desc(

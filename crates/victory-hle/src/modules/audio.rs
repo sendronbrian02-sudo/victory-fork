@@ -517,7 +517,15 @@ fn pump(context: Context, voice: &mut Voice) {
         return;
     }
     while context.field(1, 31, 1) == 1 {
-        if voice.pcm.len() < SAMPLES_PER_BLOCK && !decode(context, voice) {
+        // Switching inputs or skipping frames can advance the decoder
+        // without producing samples. Give other voices a turn if it stalls.
+        for _ in 0..8 {
+            if voice.pcm.len() >= SAMPLES_PER_BLOCK || !decode(context, voice) {
+                break;
+            }
+        }
+        // The only partial block we pad is the last one, after flushing.
+        if voice.pcm.is_empty() || (voice.pcm.len() < SAMPLES_PER_BLOCK && !voice.ended) {
             return;
         }
         let write = context.field(0, 27, 5);
@@ -543,12 +551,19 @@ fn pump(context: Context, voice: &mut Voice) {
 /// Decodes the next frame of the current input into `voice.pcm`; false
 /// when there is nothing left to decode.
 fn decode(context: Context, voice: &mut Voice) -> bool {
+    let valid = context.field(0, 20, 2);
     if voice.ended {
-        return false;
+        // A title can refill a buffer without disabling the voice.
+        if valid == 0 {
+            return false;
+        }
+        voice.ended = false;
+        if context.field(2, 26, 5) == INPUT_INVALID {
+            context.set_field(2, 26, 6, 0);
+        }
     }
     let channels = context.channels();
     let mut current = context.field(4, 31, 1);
-    let valid = context.field(0, 20, 2);
     if valid & (1 << current) == 0 {
         if valid & (1 << (1 - current)) == 0 {
             // Out of input: the overlap tail, then nothing.
@@ -641,14 +656,22 @@ fn dump_input(index: u32, context: Context) {
         return;
     }
     let dir = std::path::PathBuf::from(dir);
+    let ctx = dir.join(format!("{n:02}-{index}.ctx"));
+    let data = dir.join(format!("{n:02}-{index}.xma"));
+    if let Err(error) = victory_core::ensure_outside_repo(&ctx)
+        .and_then(|()| victory_core::ensure_outside_repo(&data))
+    {
+        tracing::warn!(%error, "XMA dump rejected");
+        return;
+    }
     let words: Vec<u8> = (0..16).flat_map(|w| context.get(w).to_le_bytes()).collect();
     let input = heap_bytes(
         context.get(5) & !0x7ff,
         context.field(0, 0, 12) as usize * xma::PACKET_BYTES,
     );
     let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(dir.join(format!("{n:02}-{index}.ctx")), words);
-    let _ = std::fs::write(dir.join(format!("{n:02}-{index}.xma")), input.unwrap_or_default());
+    let _ = std::fs::write(ctx, words);
+    let _ = std::fs::write(data, input.unwrap_or_default());
 }
 
 /// Starts the decoding thread on the first enabled voice, and has it fill
@@ -1067,6 +1090,21 @@ mod tests {
         assert_eq!(produced(&xma()), Some(26 * SAMPLES_PER_BLOCK));
         assert_eq!(context.field(0, 20, 2), 0, "input used up");
         assert_eq!(context.field(2, 26, 5), INPUT_INVALID);
+
+        // Keep the same voice enabled while the title publishes buffer 1.
+        // The worker takes this same lock before it can read the context.
+        {
+            let xma = xma();
+            let mut slot = lock(&xma.voices[1]);
+            let voice = slot.as_mut().unwrap();
+            context.set(6, input_apu);
+            context.set_field(1, 0, 12, 2);
+            context.set_field(0, 21, 1, 1);
+            let before = voice.trace.produced;
+            pump(context, voice);
+            assert!(voice.trace.produced > before, "refilled input must resume playback");
+            assert_eq!(context.field(2, 31, 1), 0);
+        }
 
         // A count near `u32::MAX` wraps the read block like any other
         // (3 + 0xffff_ffff blocks on a ring of four is block 2); the sum

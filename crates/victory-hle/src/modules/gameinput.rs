@@ -1194,7 +1194,7 @@ mod host {
         const LEFT_Y: u32 = 0x31;
         const RIGHT_X: u32 = 0x32;
         const RIGHT_Y: u32 = 0x33;
-        const LEFT_TRIGGER: u32 = 0x32 + 0x00;
+        const LEFT_TRIGGER: u32 = 0x32;
         /// Reports read before the pad is opened again: a pad whose reports
         /// stop (it was unplugged) is looked for again after this long.
         pub(super) const REOPEN: std::time::Duration = std::time::Duration::from_secs(2);
@@ -1295,7 +1295,7 @@ mod host {
                 let handle = unsafe {
                     CreateFileW(
                         path,
-                        (GENERIC_READ | GENERIC_WRITE) as u32,
+                        GENERIC_READ | GENERIC_WRITE,
                         FILE_SHARE_READ | FILE_SHARE_WRITE,
                         std::ptr::null(),
                         OPEN_EXISTING,
@@ -1413,7 +1413,7 @@ mod host {
                         report.len() as u32,
                     )
                 };
-                if asked == HIDP_STATUS_SUCCESS as i32 {
+                if asked == HIDP_STATUS_SUCCESS {
                     for &usage in &usages[..count as usize] {
                         if let Some(&(_, button)) = BUTTONS.iter().find(|(u, _)| *u == u32::from(usage)) {
                             pad.wButtons |= button;

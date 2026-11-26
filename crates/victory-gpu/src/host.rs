@@ -807,9 +807,6 @@ mod tests {
 
 /// A host command list and its allocator, always used together.
 pub(crate) struct HostList {
-    /// The list holding this one's hoisted indirect clamps, open, to be
-    /// closed and run before it ([`crate::indirect::Clamps`]).
-    pub(crate) clamps: Mutex<Option<Box<crate::indirect::Clamps>>>,
     allocator: ID3D12CommandAllocator,
     pub(crate) list: ID3D12GraphicsCommandList,
     /// Work for submission time, in recorded order.
@@ -1909,6 +1906,8 @@ struct Deferred {
     /// descriptor heaps): the title may release its objects before it
     /// submits the list.
     kept: Vec<windows::core::IUnknown>,
+    /// Pipeline/root pairs already kept by this recording, by interface address.
+    bound_pipelines: std::collections::HashSet<(usize, usize)>,
     /// Buffer ranges refreshed since the last title copy (host copy,
     /// address, bytes): refreshing them again would find the same bytes.
     refreshed: std::collections::HashSet<(usize, usize, usize)>,
@@ -3829,7 +3828,6 @@ impl Host {
             }
             Ok(HostList {
                 allocator,
-                clamps: Mutex::default(),
                 list,
                 deferred: Mutex::default(),
                 scratch: Mutex::default(),
@@ -5468,19 +5466,6 @@ impl Host {
             settled += settling.elapsed();
         }
         for list in runs {
-            // The clamps of this list's indirect draws run before it, in a
-            // list of their own (`crate::indirect::Clamps`): a pass of ours
-            // between two draws turns the card from drawing to compute and
-            // back, and a run of draws with its clamps ahead costs one
-            // switch a run (from Belobug's fork).
-            if let Some(mut clamps) = list.clamps.lock().unwrap_or_else(|e| e.into_inner()).take() {
-                crate::indirect::end_clamps(&mut clamps);
-                if let Ok(closed) = clamps.list.list.cast::<ID3D12CommandList>() {
-                    lists.push(Some(closed));
-                }
-                // Held until the list has run: its allocator is reset then.
-                crate::indirect::KEEP.with(|kept| kept.borrow_mut().push(clamps));
-            }
             list.run_deferred(&mut batch);
             firsts.push(lists.len());
             if let Some(prelude) = list.prelude() {
@@ -5673,9 +5658,6 @@ impl Host {
         }
         self.log_messages();
         submitting(0, 0);
-        // The clamps lists of this submission have run: let them go (their
-        // allocators may be reset now).
-        crate::indirect::KEEP.with(|kept| kept.borrow_mut().clear());
         #[cfg(feature = "diagnostics")]
         crate::copystat::submission_ends(lock);
         // With the relay: nothing is in the air now, so no fetch still to
@@ -5928,20 +5910,6 @@ impl Host {
 }
 
 impl HostList {
-    /// A list for the clamps of a run of indirect draws, which runs before
-    /// the list that draws ([`crate::indirect::Clamps`]): a list of its
-    /// own, with no prelude of the title's to wait for.
-    pub(crate) fn open_for_clamps(_into: &HostList) -> Option<HostList> {
-        let me = host()?;
-        match me.make_list() {
-            Ok(list) => Some(list),
-            Err(e) => {
-                tracing::warn!(error = %e, "no host list for the clamps of indirect draws");
-                None
-            }
-        }
-    }
-
     /// The timestamp heap and its read-back buffer (diagnostics, timing on).
     #[cfg(feature = "diagnostics")]
     fn stamps(&self) -> Option<&(ID3D12QueryHeap, ID3D12Resource)> {
@@ -6479,6 +6447,19 @@ impl HostList {
             // The pipeline before it ends here on the card's clock.
             crate::cardmeter::end(&self.list, crate::cardmeter::Span::from_raw(self.pipeline_meter.swap(u32::MAX, Ordering::Relaxed)));
             self.pipeline_meter.store(crate::cardmeter::begin_named(&self.list, name).raw(), Ordering::Relaxed);
+        }
+    }
+
+    /// Keeps both objects alive once per recording. Rebinding after another
+    /// pipeline doesn't need another pair of COM references.
+    pub(crate) fn keep_pipeline(&self, pso: &ID3D12PipelineState, root: &ID3D12RootSignature) {
+        let mut deferred = self.deferred();
+        if deferred
+            .bound_pipelines
+            .insert((pso.as_raw() as usize, root.as_raw() as usize))
+        {
+            deferred.kept.push(pso.clone().into());
+            deferred.kept.push(root.clone().into());
         }
     }
 

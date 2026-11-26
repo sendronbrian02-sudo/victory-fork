@@ -12,8 +12,24 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 pub(crate) fn folder() -> Option<&'static PathBuf> {
     static FOLDER: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     FOLDER
-        .get_or_init(|| std::env::var_os("VICTORY_CAPTURE").map(PathBuf::from))
+        .get_or_init(|| {
+            let folder = std::env::var_os("VICTORY_CAPTURE").map(PathBuf::from)?;
+            if let Err(error) = victory_core::ensure_outside_repo(&folder) {
+                tracing::warn!(%error, "frame capture disabled");
+                return None;
+            }
+            Some(folder)
+        })
         .as_ref()
+}
+
+fn output(name: &str) -> Option<PathBuf> {
+    let path = folder()?.join(name);
+    if let Err(error) = victory_core::ensure_outside_repo(&path) {
+        tracing::warn!(%error, "frame capture output rejected");
+        return None;
+    }
+    Some(path)
 }
 
 /// Frames listed in `VICTORY_CAPTURE_FRAMES` (comma-separated): saved
@@ -89,14 +105,17 @@ pub(crate) fn op(list: usize, what: impl FnOnce() -> String) {
         }
         return;
     }
-    let Some(folder) = folder() else {
+    if folder().is_none() {
         return;
-    };
+    }
     static FILE: std::sync::Mutex<Option<(u64, u64, std::fs::File)>> = std::sync::Mutex::new(None);
     let what = what();
     let mut file = FILE.lock().unwrap_or_else(|e| e.into_inner());
     if file.as_ref().is_none_or(|f| f.0 != frame) {
-        let Ok(made) = std::fs::File::create(folder.join(format!("frame-{frame}-ops.txt"))) else {
+        let Some(path) = output(&format!("frame-{frame}-ops.txt")) else {
+            return;
+        };
+        let Ok(made) = std::fs::File::create(path) else {
             return;
         };
         *file = Some((frame, 0, made));
@@ -150,9 +169,9 @@ pub(crate) fn frame_drew(frame: u64, drawn: u64) {
     {
         tracing::info!(frame, "the first frame of 500 draws or more: frames {} and {} are captured", frame + 2, frame + 6);
         #[cfg(feature = "diagnostics")]
-        if let Some(folder) = folder() {
+        if let Some(path) = output("before-world-ops.txt") {
             let lines: Vec<String> = std::mem::take(&mut *RING.lock().unwrap_or_else(|e| e.into_inner())).into();
-            let _ = std::fs::write(folder.join("before-world-ops.txt"), lines.join("
+            let _ = std::fs::write(path, lines.join("
 "));
         }
     }
@@ -178,7 +197,7 @@ pub(crate) fn save(n: u64, width: u32, height: u32, pitch: usize, bgra: bool, ro
 
 /// Saves 8-bit RGBA or BGRA rows as `<name>.png`, at half size.
 fn save_as(name: &str, width: u32, height: u32, pitch: usize, bgra: bool, rows: &[u8]) {
-    let Some(folder) = folder() else { return };
+    let Some(path) = output(&format!("{name}.png")) else { return };
     let (w, h) = ((width / 2).max(1), (height / 2).max(1));
     // Filter byte 0 per row, then RGB of every other pixel of every other row.
     let mut raw = Vec::with_capacity((w as usize * 3 + 1) * h as usize);
@@ -205,7 +224,6 @@ fn save_as(name: &str, width: u32, height: u32, pitch: usize, bgra: bool, rows: 
     debug_assert_eq!(rc, zlib_rs::ReturnCode::Ok);
     chunk(&mut png, b"IDAT", idat);
     chunk(&mut png, b"IEND", &[]);
-    let path = folder.join(format!("{name}.png"));
     match std::fs::write(&path, png) {
         Ok(()) => tracing::info!(path = %path.display(), "frame saved"),
         Err(e) => tracing::warn!(error = %e, path = %path.display(), "frame not saved"),

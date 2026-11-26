@@ -497,6 +497,9 @@ What each part does today and what it still needs:
 
 ## Getting started
 
+Pour compiler sur Windows, exporter les ressources ou mesurer les 30 FPS
+dans le monde : [guide Windows en français](docs/guide-windows-fr.md).
+
 Requirements: Windows 10/11 x64, a CPU with AVX2, a Direct3D 12 GPU with
 shader model 6.6 (and mesh shaders for the world), Rust (pinned in
 `rust-toolchain.toml`).
@@ -544,6 +547,7 @@ victory census [paths...] [--missing] [--strict]
 victory lib-exports <import.lib> [--list]
 victory shader-info [paths...] [--verbose] [--disasm]
 victory translate [paths...] [--validate] [--pipelines] [--list] [--jobs N]
+                  [--export-dxil <directory>]
 victory run <exe> [--execute] [--unimplemented trap|zero] [--strict]
             [--console series-x|series-s] [-- <title arguments>]
 victory config
@@ -569,6 +573,7 @@ cargo build --profile diag -p victory --features diagnostics   # target\diag\vic
 | `VICTORY_CRASH_SAVE=<rva>:<len>,...` | saves title memory to the cache folder on a crash |
 | `VICTORY_CAPTURE=<dir>` | saves presented frames (powers of two, or `VICTORY_CAPTURE_FRAMES=<list>`) |
 | `VICTORY_DUMP_TARGETS=1` | with the two above, saves every render target of those frames |
+| `VICTORY_TEXTURE_DUMP=<dir>` | saves up to 256 DDS snapshots of 2D texture mips as the title uploads them; `VICTORY_TEXTURE_DUMP_AFTER_FRAME=<n>` delays export |
 | `VICTORY_D3D12_DEBUG=1` | host debug layer |
 | `VICTORY_D3D12_GBV=1` | with the above, GPU-based validation (bad descriptor use reported, not faulted; slow) |
 | `VICTORY_D3D12_DRED=1` | on a GPU failure, the allocation hit and the commands in flight |

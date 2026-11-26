@@ -157,7 +157,15 @@ s'exécute juste avant celle qui dessine. Une suite de draws ne fait plus
 qu'un aller-retour dessin → compute au lieu d'un par draw. C'est la
 modification de Belobug (fork AMD), où 225 ms de temps carte par frame
 sont passées à environ 80 ms dans une scène de 9 000 draws.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:78e80f8c93391da674c03ebb9734f90d359ddf00636eacf8ca165b776033db32 -->
+
 `VICTORY_HOIST_CLAMPS=0` revient à un bornage devant chaque draw.
+
+> Mise à jour : ce chemin a depuis été retiré. Voir le [guide Windows](docs/guide-windows-fr.md#changements-du-rendu) pour la raison et les réglages actuels.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Mesures sur cette machine : 176 tests passent ; le lancement va jusqu'au
 monde, 30 fps constants dans les menus (le plafond), 0 refus de detile,

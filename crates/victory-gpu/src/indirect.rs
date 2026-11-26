@@ -493,106 +493,6 @@ fn record_clamp_as(
     true
 }
 
-/// The list the clamps of a run of indirect draws go to instead of the
-/// list that draws, and its scratch buffer ([`bound_before`]); closed with
-/// [`end_clamps`]. A pass of ours between two draws turns the card from
-/// drawing to compute and back; a run of draws with its clamps in a list
-/// before it costs one switch a run (from Belobug's fork, where 225 ms of
-/// card time a frame in a scene of 9,000 draws became about 80).
-#[cfg(windows)]
-pub(crate) struct Clamps {
-    /// The list, open, holding clamps only.
-    pub(crate) list: crate::host::HostList,
-    /// Its scratch buffer (the clamped records the draws read).
-    scratch: Option<ID3D12Resource>,
-    /// The budget, once found.
-    budget: Option<u64>,
-}
-
-/// Whether the clamps of indirect draws go to a list before the one that
-/// draws (`VICTORY_HOIST_CLAMPS=0` puts each clamp before its draw, as
-/// before). On by default: a scene of 9,000 draws spent 225 ms of card time
-/// a frame with a clamp before every draw, and about 80 with them hoisted
-/// (Belobug's fork, on another card).
-pub(crate) fn hoisting() -> bool {
-    use std::sync::atomic::{AtomicU8, Ordering};
-    static ON: AtomicU8 = AtomicU8::new(u8::MAX);
-    let on = ON.load(Ordering::Relaxed);
-    if on == u8::MAX {
-        let set = std::env::var("VICTORY_HOIST_CLAMPS").ok().as_deref() != Some("0");
-        ON.store(u8::from(set), Ordering::Relaxed);
-        return set;
-    }
-    on != 0
-}
-
-// The clamps lists of a submission, held until it has run.
-#[cfg(windows)]
-thread_local! {
-    pub(crate) static KEEP: std::cell::RefCell<Vec<Box<Clamps>>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-#[cfg(windows)]
-impl Clamps {
-    /// A clamps list for the list `into` (which keeps it alive until it
-    /// has run).
-    pub(crate) fn new(into: &crate::host::HostList) -> Option<Self> {
-        let list = crate::host::HostList::open_for_clamps(into)?;
-        Some(Self {
-            list,
-            scratch: None,
-            budget: None,
-        })
-    }
-}
-
-/// Records the clamp of one indirect execution into `clamps`, which runs
-/// before the list that draws: the same clamp [`bound`] records, into the
-/// clamps list's own scratch buffer. Returns the buffer and the offset of
-/// the clamped records, which the draw then reads.
-#[cfg(windows)]
-pub(crate) fn bound_before(
-    clamps: &mut Clamps,
-    src: (&ID3D12Resource, u64),
-    count: Option<(&ID3D12Resource, u64)>,
-    spec: (u32, u32, u32),
-) -> Option<(ID3D12Resource, u64)> {
-    let bytes = validate_layout(spec, src.1, count.map(|(_, off)| off))?;
-    let c = clamp()?;
-    let budget = match clamps.budget {
-        Some(b) => b,
-        None => {
-            let b = clamps.list.budget()?;
-            clamps.budget = Some(b);
-            b
-        }
-    };
-    let scratch = match &clamps.scratch {
-        Some(s) => s.clone(),
-        None => {
-            let s = clamps.list.indirect_scratch(bytes)?;
-            clamps.scratch = Some(s.clone());
-            s
-        }
-    };
-    // The clamps write into their own scratch buffer, one record window
-    // after another: the one before is already readable as arguments, so
-    // the clamp's own barrier orders them.
-    if !clamp_into(&clamps.list, c, &scratch, budget, src, count, spec, false) {
-        return None;
-    }
-    Some((scratch, 0))
-}
-
-/// Closes the clamps list, which the list that draws then runs first.
-#[cfg(windows)]
-pub(crate) fn end_clamps(clamps: &mut Clamps) {
-    if let Some(scratch) = clamps.scratch.take() {
-        clamps.list.indirect_common(&scratch);
-    }
-    let _ = clamps.list.close();
-}
-
 /// Whether every draw served from a window is checked against a fresh
 /// clamp of its record (`VICTORY_INDIRECT_WINDOW_CHECK=1` to ask for it,
 /// `=0` to leave it out; **on by default** in this branch, with
@@ -2267,7 +2167,6 @@ void work() {
         heap_pairs: [[Option<ID3D12DescriptorHeap>; 2]; 2],
         tables: [D3D12_GPU_DESCRIPTOR_HANDLE; 2],
         targets: [D3D12_CPU_DESCRIPTOR_HANDLE; 2],
-        depth_written: D3D12_CPU_DESCRIPTOR_HANDLE,
         depth_tested: D3D12_CPU_DESCRIPTOR_HANDLE,
         stamps: ID3D12QueryHeap,
         back: ID3D12Resource,
@@ -2575,7 +2474,6 @@ void work() {
                     heap_pairs,
                     tables,
                     targets,
-                    depth_written,
                     depth_tested,
                     stamps,
                     back,
