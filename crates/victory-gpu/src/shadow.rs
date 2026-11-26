@@ -57,6 +57,13 @@ pub(crate) struct Shadow {
     /// outside buffers nothing asked for in a while, and nothing holds, is
     /// let go ([`let_go_idle`]).
     used: AtomicU64,
+    /// Set when the title was given the copy's own GPU address (a root
+    /// descriptor, a buffer view, a vertex or index buffer, an indirect
+    /// record): a shader may still hold that address after the frame, so the
+    /// copy is never let go while nothing else names it. Counted by the
+    /// memory line, so that a session whose memory grows by these is not
+    /// read as losing it.
+    pinned: std::sync::atomic::AtomicBool,
     /// The lowest and highest title address asked for in the copy (a
     /// window is 4 MiB whatever was asked: measured for the memory line).
     asked: [AtomicU64; 2],
@@ -298,6 +305,21 @@ fn card_for(size: u64) -> Option<ID3D12Resource> {
     }
     if CARD_BYTES[0].fetch_add(size, Ordering::Relaxed) + size > most {
         CARD_BYTES[0].fetch_sub(size, Ordering::Relaxed);
+        // Said once a second at most, with the numbers: the PC's memory a
+        // copy takes stays, and the card's is what would free it.
+        static SAID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let now = crate::host::now_ms();
+        let last = SAID.load(Ordering::Relaxed);
+        if now >= last + 1_000 && SAID.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            tracing::info!(
+                "no card copy for a title buffer of {} KiB: the copies hold {} MB of at most {} MB; a copy of this \
+                 size would take it past (VICTORY_CARD_BUFFERS_MB raises the most, VICTORY_CARD_BUFFERS_MIN_MB \
+                 which sizes are copied at all)",
+                size >> 10,
+                CARD_BYTES[0].load(Ordering::Relaxed) >> 20,
+                most >> 20
+            );
+        }
         return None;
     }
     let buffer = host.uav_buffer(size);
@@ -2379,8 +2401,15 @@ pub(crate) fn window_use() -> [u64; 8] {
 ///
 /// The next read of that memory makes a new copy and copies the window
 /// again. Called before a submission starts, by the thread that submits.
+/// For the sweep's line: of the copies alive at the look, how many were
+/// held by another reference of ours, used within the idle time, and held
+/// by the card (a reference the host's views and commands do not make).
+static WHY: [std::sync::atomic::AtomicU64; 3] = [const { std::sync::atomic::AtomicU64::new(0) }; 3];
+
 pub(crate) fn let_go_idle() {
     const IDLE_FRAMES: u64 = 4;
+    let began = std::time::Instant::now();
+    let seen_before = LIVE[0].load(Ordering::Relaxed);
     let gone: Vec<Arc<Shadow>> = {
         // Held from the look to the removal: `loose` hands a copy out
         // under the same lock, so none is handed out in between.
@@ -2389,6 +2418,21 @@ pub(crate) fn let_go_idle() {
             return;
         }
         let idle_ms = crate::host::ram_idle_ms(crate::host::available_physical_ram());
+        // Why a copy that nothing names stays: the reason that came first
+        // most often, for the sweep's line.
+        let mut why = [0u64; 3];
+        for (_, s) in map.iter() {
+            if Arc::strong_count(s) > 1 {
+                why[0] += 1;
+            } else if !crate::host::long_ago(s.used.load(Ordering::Relaxed), idle_ms, IDLE_FRAMES) {
+                why[1] += 1;
+            } else if crate::host::references(&s.buffer) != 1 {
+                why[2] += 1;
+            }
+        }
+        WHY[0].store(why[0], Ordering::Relaxed);
+        WHY[1].store(why[1], Ordering::Relaxed);
+        WHY[2].store(why[2], Ordering::Relaxed);
         let idle: Vec<(u64, u64)> = map
             .iter()
             .filter(|(_, s)| {
@@ -2403,7 +2447,19 @@ pub(crate) fn let_go_idle() {
     if !gone.is_empty() {
         let (went, bytes) = (gone.len(), gone.iter().map(|s| s.len).sum::<u64>());
         crate::host::trail(|| {
-            format!("sweep: {went} host copies of windows of title memory let go ({} KiB), held by no list and no slot", bytes >> 10)
+            format!(
+                "sweep: {went} host copies of windows of title memory let go ({} KiB), held by no list and no slot; \
+                 of {seen_before} alive at the look, {} MB of {} MB left (the rest kept by a list, a slot or a \
+                 title address); not let go: {} named by another of our references, {} used in the last seconds, \
+                 {} still referenced by the card; in {:.1} ms",
+                bytes >> 10,
+                LIVE[1].load(Ordering::Relaxed) >> 20,
+                bytes >> 20,
+                WHY[0].load(Ordering::Relaxed),
+                WHY[1].load(Ordering::Relaxed),
+                WHY[2].load(Ordering::Relaxed),
+                began.elapsed().as_secs_f64() * 1000.0
+            )
         });
     }
     for shadow in gone {
@@ -2419,8 +2475,8 @@ pub(crate) fn let_go_idle() {
 /// windows of memory outside buffers and their bytes, and the snapshot
 /// buffers kept for reuse and the bytes they reserve.
 #[cfg(feature = "diagnostics")]
-pub(crate) fn memory() -> [u64; 6] {
-    let (windows, window_bytes) = {
+pub(crate) fn memory() -> [u64; 7] {
+    let (windows, window_bytes, pinned_bytes) = {
         let loose = LOOSE.lock().unwrap_or_else(|e| e.into_inner());
         // Each copy once: a window may stand under several keys.
         let mut seen = std::collections::HashSet::new();
@@ -2429,7 +2485,22 @@ pub(crate) fn memory() -> [u64; 6] {
             .filter(|s| seen.insert(Arc::as_ptr(s) as usize))
             .map(|s| s.len)
             .sum();
-        (seen.len() as u64, bytes)
+        // How much of that the sweep may never let go: the title's own
+        // GPU addresses written into the copies (a shader reads a pointer to
+        // one, so the copy has to outlive the frame) and the copies kept by
+        // the views still used this frame. A session whose memory grows by
+        // these is not losing anything: it is keeping what it must.
+        let held = {
+            let mut once = std::collections::HashSet::new();
+            let mut held = 0u64;
+            for shadow in loose.values() {
+                if once.insert(Arc::as_ptr(shadow) as usize) && shadow.pinned.load(Ordering::Relaxed) {
+                    held += shadow.len;
+                }
+            }
+            held
+        };
+        (seen.len() as u64, bytes, held)
     };
     let (kept, kept_bytes) = {
         let pool = POOL.lock().unwrap_or_else(|e| e.into_inner());
@@ -2442,6 +2513,7 @@ pub(crate) fn memory() -> [u64; 6] {
         window_bytes,
         kept,
         kept_bytes,
+        pinned_bytes,
     ]
 }
 
@@ -2454,6 +2526,8 @@ unsafe impl Sync for Shadow {}
 impl Shadow {
     /// The host GPU address of a title address inside the buffer.
     pub(crate) fn gpu(&self, address: u64) -> u64 {
+        // The title now knows where this copy is: see `pinned`.
+        self.pinned.store(true, Ordering::Relaxed);
         self.gpu + (address - self.start)
     }
 
@@ -2536,6 +2610,7 @@ impl Shadow {
             before: Mutex::default(),
             kept: Mutex::default(),
             used: AtomicU64::new(crate::host::moment()),
+            pinned: std::sync::atomic::AtomicBool::new(false),
             asked: [AtomicU64::new(u64::MAX), AtomicU64::new(0)],
             unsized_asks: AtomicU64::new(0),
             id: {

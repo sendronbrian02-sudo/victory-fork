@@ -1842,9 +1842,9 @@ pub(crate) fn let_go_idle() {
 /// 26,517 copies of filled textures were let go to stay under the card's
 /// line.
 #[cfg(all(windows, feature = "diagnostics"))]
-pub(crate) fn targets_census() -> [u64; 12] {
+pub(crate) fn targets_census() -> [u64; 18] {
     use std::sync::atomic::Ordering::Relaxed;
-    let mut c = [0u64; 12];
+    let mut c = [0u64; 18];
     let all = textures();
     for &at in all.iter() {
         // SAFETY: as in `let_go_idle`.
@@ -1870,14 +1870,29 @@ pub(crate) fn targets_census() -> [u64; 12] {
         let placed = r.host.placed.load(Relaxed);
         // Its first page: what is there of a texture starts there.
         let unmapped = placed && !crate::texture::committed(r.data().cast_const(), 1);
-        let idle = crate::host::long_ago(r.host.used.load(Relaxed), 30_000, 60)
-            && std::sync::Arc::strong_count(host) == 1
-            && crate::host::references(&host.texture) == 1;
+        // Why it stays, asked of the same things the sweep asks: the last
+        // use within its 30 s, a reference of ours held elsewhere, the
+        // card's own reference, and the title memory not mapped now.
+        let (recent, ours, card_ref) = (
+            !crate::host::long_ago(r.host.used.load(Relaxed), 30_000, 60),
+            std::sync::Arc::strong_count(host) != 1,
+            crate::host::references(&host.texture) != 1,
+        );
+        let idle = !recent && !ours && !card_ref;
         if unmapped {
             add(2);
         }
         if idle {
             add(4);
+        }
+        if recent {
+            add(8);
+        }
+        if ours {
+            add(10);
+        }
+        if card_ref {
+            add(12);
         }
         if unmapped && idle {
             add(6);

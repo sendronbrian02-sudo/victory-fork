@@ -803,7 +803,7 @@ fn log_memory() {
     );
     let targets = crate::resource::targets_census();
     tracing::info!(
-        "host copies the sweep never lets go: {} the host renders to or writes {:.0} MB ({} of them placed {:.0} MB);          of them {} have title memory that is not mapped now {:.0} MB, {} were not used for 30 s and are held by no          list and no slot {:.0} MB, {} are both {:.0} MB; and {} copies of textures the title fills that the host          copied into {:.0} MB",
+        "host copies the sweep never lets go: {} the host renders to or writes {:.0} MB ({} of them placed {:.0} MB);          of them {} have title memory that is not mapped now {:.0} MB, {} were not used for 30 s and are held by no          list and no slot {:.0} MB, {} are both {:.0} MB; still kept by {} used in the last 30 s {:.0} MB, {} named by          another of our references {:.0} MB, {} referenced by the card {:.0} MB; and {} copies of textures the title fills that the host          copied into {:.0} MB",
         targets[0],
         mb(targets[1]),
         targets[10],
@@ -816,6 +816,12 @@ fn log_memory() {
         mb(targets[7]),
         targets[8],
         mb(targets[9]),
+        targets[12],
+        mb(targets[13]),
+        targets[14],
+        mb(targets[15]),
+        targets[16],
+        mb(targets[17]),
     );
     tracing::info!(
         "memory let go since the start: {} windows outside buffers {:.0} MB, {} staging buffers \
@@ -830,7 +836,8 @@ fn log_memory() {
     tracing::info!(
         "memory: {:.0} MB private ({:.0} MB of it in memory; the PC has {:.0} MB free and {:.0} MB \
          left to commit); host copies of title memory: {} alive {:.0} MB, of them {} windows \
-         outside buffers {:.0} MB; snapshot buffers kept: {} reserving {:.0} MB; staging of \
+         outside buffers {:.0} MB and {:.0} MB the title was given the address of (kept for \
+         good); snapshot buffers kept: {} reserving {:.0} MB; staging of \
          textures: {} alive {:.0} MB, {} kept by their texture; host textures: {} alive {:.0} MB, \
          {} placed in title memory; made so far: {} upload buffers {:.0} MB, {} shared buffers \
          {:.0} MB, {} card buffers {:.0} MB",
@@ -842,6 +849,7 @@ fn log_memory() {
         mb(copies[1]),
         copies[2],
         mb(copies[3]),
+        mb(copies[6]),
         copies[4],
         mb(copies[5]),
         staged[0],
