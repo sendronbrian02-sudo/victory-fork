@@ -1988,6 +1988,8 @@ impl HostHeap {
     /// views are made only for draws (`for_draw`), which also copy their
     /// data: a host copy of a buffer is made on first use.
     pub(crate) fn mirror(&self, index: u32, handle: u64, for_draw: bool) -> Option<View> {
+        // A slot is being made here too: its view needs the host copy.
+        let _slot = crate::host::slot_make();
         if index >= self.count {
             // Diagnostic (NVIDIA heap cap): the highest title slot past the
             // host heap seen so far.
@@ -2788,6 +2790,9 @@ fn twin_uav(
 /// Makes the host descriptor for `view` at `at`: the host resource it
 /// views, or `None` if it cannot.
 fn make(view: &View, at: D3D12_CPU_DESCRIPTOR_HANDLE) -> Option<Kept> {
+    // A slot is the reason a title texture's host copy is made at all: the
+    // memory line tells the two apart (`crate::host::in_slot_make`).
+    let _slot = crate::host::SlotMake::begin();
     let host = host()?;
     let device = &host.device;
     match view {

@@ -801,6 +801,19 @@ fn log_memory() {
         mb(card[0]),
         mb(card[3]),
     );
+    {
+        let [a, b] = [0, 1].map(|i| [0, 1].map(|j| crate::texture::NEVER[i][j].swap(0, Relaxed)));
+        if a[0] + b[0] > 0 {
+            tracing::info!(
+                "uploads of textures skipped: {} because the title wrote their memory after the host had (widths in all {}), \
+                 {} because another list of the frame used them first (widths {})",
+                a[0],
+                a[1],
+                b[0],
+                b[1]
+            );
+        }
+    }
     let targets = crate::resource::targets_census();
     tracing::info!(
         "host copies the sweep never lets go: {} the host renders to or writes {:.0} MB ({} of them placed {:.0} MB);          of them {} have title memory that is not mapped now {:.0} MB, {} were not used for 30 s and are held by no          list and no slot {:.0} MB, {} are both {:.0} MB; still kept by {} used in the last 30 s {:.0} MB, {} named by          another of our references {:.0} MB, {} referenced by the card {:.0} MB; and {} copies of textures the title fills that the host          copied into {:.0} MB",

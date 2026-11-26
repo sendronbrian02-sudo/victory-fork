@@ -294,6 +294,39 @@ fn trail_on() -> bool {
     *ON.get_or_init(|| std::env::var_os("VICTORY_TRAIL").is_none_or(|v| v != "0"))
 }
 
+/// Whether a descriptor slot is being made (the only reason a title
+/// texture's host copy is needed: a view of it has to point at something).
+/// Set by the slot's make, cleared by it.
+static IN_SLOT_MAKE: [std::sync::atomic::AtomicU64; 2] = [const { std::sync::atomic::AtomicU64::new(0) }; 2];
+
+/// Says a descriptor slot is being made, until the guard drops.
+pub(crate) struct SlotMake;
+
+impl SlotMake {
+    /// Marks the start, on this thread.
+    pub(crate) fn begin() -> SlotMake {
+        IN_SLOT_MAKE[0].fetch_add(1, Ordering::Relaxed);
+        SlotMake
+    }
+}
+
+impl Drop for SlotMake {
+    fn drop(&mut self) {
+        IN_SLOT_MAKE[0].fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Whether a descriptor slot is being made on this thread now.
+pub(crate) fn in_slot_make() -> bool {
+    IN_SLOT_MAKE[0].load(Ordering::Relaxed) > 0
+}
+
+/// Marks that a slot is being made on this thread, for a caller that is
+/// not `descriptor::host::make` (`mirror`, the copy that reaches a slot).
+pub(crate) fn slot_make() -> SlotMake {
+    SlotMake::begin()
+}
+
 /// Microseconds since the first call.
 pub(crate) fn now_us() -> u64 {
     static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();

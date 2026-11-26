@@ -644,6 +644,13 @@ pub(crate) fn let_go_idle() {
 /// the host, not in title memory, which stays as it was.
 static HOST_WRITTEN: Mutex<Option<std::collections::HashSet<usize>>> = Mutex::new(None);
 
+/// Why a texture skipped its upload, for the memory line: `host_written`
+/// and the other case, each with how many and their widths (a poor man's
+/// size: enough to tell the two apart).
+#[cfg(all(windows, feature = "diagnostics"))]
+pub(crate) static NEVER: [[std::sync::atomic::AtomicU64; 2]; 2] =
+    [const { [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)] }; 2];
+
 /// A host copy or resolve writes `resource`.
 pub(crate) fn host_written(resource: This) {
     let new = {
@@ -758,6 +765,15 @@ pub(crate) fn upload(list: &HostList, resource: This, texture: &ID3D12Resource) 
     // shortcut: a texture the host copied into keeps the host's contents
     // even if the title later writes its memory too.
     if host_written || !list.first_use(resource as usize) {
+        // Why a texture is never uploaded, for the memory line: the title
+        // wrote its memory after the host had (the host's bytes stay), or
+        // another list of the frame used it first.
+        let i = usize::from(host_written);
+        NEVER[i][0].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        NEVER[i][1].fetch_add(
+            unsafe { texture.GetDesc() }.Width,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         return;
     }
     let Some(staging) = staging(resource, texture) else {

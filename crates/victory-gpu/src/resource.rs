@@ -379,6 +379,11 @@ pub(crate) static TWINS: [std::sync::atomic::AtomicU64; 4] =
 pub(crate) static PLANES: [std::sync::atomic::AtomicU64; 3] =
     [const { std::sync::atomic::AtomicU64::new(0) }; 3];
 
+/// Why host copies are asked for, for the memory line: the milliseconds
+/// when the last one outside a descriptor slot was asked for, how many
+/// there have been, and their bytes.
+static OTHER_MADE: [std::sync::atomic::AtomicU64; 3] = [const { std::sync::atomic::AtomicU64::new(0) }; 3];
+
 /// The colour twin of title texture `this`, if it has one.
 #[cfg(windows)]
 pub(crate) fn twin(this: This) -> Option<std::sync::Arc<Twin>> {
@@ -1299,6 +1304,20 @@ fn hosted(this: This, make: bool) -> Option<Made> {
     if r.desc.dimension == BUFFER {
         return None;
     }
+    // Why a host copy is asked for at all, for the memory line: whether a
+    // descriptor slot that views the texture was written just before it
+    // (the copy exists only to serve that slot), or something else did.
+    if make && !crate::host::in_slot_make() {
+        let now = crate::host::now_ms();
+        let last = OTHER_MADE[0].load(Relaxed);
+        if now >= last + 1_000 && OTHER_MADE[0].compare_exchange(last, now, Relaxed, Relaxed).is_ok() {
+            tracing::info!(
+                "host copies asked for outside a descriptor slot: {} since the start, {} MB",
+                OTHER_MADE[1].load(Relaxed),
+                OTHER_MADE[2].load(Relaxed) >> 20
+            );
+        }
+    }
     let mut made = r.host.made.lock().unwrap_or_else(|e| e.into_inner());
     if made.is_none() {
         if !make || r.host.refused.load(Relaxed) {
@@ -2067,6 +2086,9 @@ pub(crate) fn host_copy(this: This) -> Option<std::sync::Arc<HostTexture>> {
     if this.is_null() {
         return None;
     }
+    // A transition, a twin or a copy-back asks for the copy as a slot does:
+    // the memory line counts only what nothing but a slot would explain.
+    let _slot = crate::host::slot_make();
     hosted(this, true).map(|made| made.0)
 }
 
