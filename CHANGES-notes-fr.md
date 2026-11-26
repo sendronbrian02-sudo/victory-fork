@@ -613,3 +613,53 @@ Ce qui manque chez nous, par ordre d'importance pour une RTX 4070 :
 4. Les correctifs shaders des PR #4/#66/#82/#142 (wave32/32 lanes) : c'est
    notre GPU.
 5. `THIN` et `CARD_STEPS` : gros morceaux, à faire quand 1-4 sont mesurés.
+
+## 21. Le troisième fork : carlm125/cool_fox (le plus avancé des trois)
+
+Source : <https://github.com/carlm125/cool_fox>, commit `f4b48ad` (26/11).
+627 commits, un journal de bugs daté, et **testé sur une RTX 5090 32 GB** :
+c'est le seul des trois forks qui parle de notre GPU.
+
+### 21.1 Ce qu'il apporte que nous n'avons pas
+
+| Levier | Où | Effet mesuré (journal du 25/11) |
+|---|---|---|
+| **Release `pareto-residency`** | `f4b48ad`, 1 670 lignes | 64,2 → **54,8 ms** de médiane sur la même sauvegarde (RTX 5090), 57,7 ms sur 23 intervalles lourds |
+| **Baisse de la résidence** (plafonds de commit, réserves, refus) | `residency.rs`, `pool.rs`, `texture/ahead.rs` | plus de `E_OUTOFMEMORY` : 0 refus sur 120 intervalles, médiane **54,3 ms** |
+| **Wave32 NVIDIA** | `victory-shader/src/resource.rs`, `emit/lower.rs` | garde `lanes.guards[b][i]` en élaguant les arêtes mortes : sans ça, un buffer de transmission reste à zéro → **carrés noirs** et blending cassé (nos 195+195 refus de shaders sont du même genre) |
+| **Tables de strides** (`SLOT_TABLE_STRIDES=252`, `heap_strides`) | `descriptor/host.rs` | déformations de visage et maillages corrects |
+| **`VICTORY_INDIRECT_REST=0` par défaut** | `indirect.rs` | un enregistrement indirect trop gros ne met plus à zéro **tous les dessins suivants** → le scintillement des arbres et des bâtiments au loin |
+| **Libération des slots dynamiques** (`Detached::release_tables`) | `host.rs`, `draw.rs` | ne sature plus les 262 144 slots dynamiques NVIDIA (dessins perdus) |
+| **`victory warm`** des pipelines | `pipeline/make.rs` | les saccades de la première minute |
+| **d16** (`bufferLoad/Store d16`) | `emit/lower.rs` | ombres et visages |
+| Audio XMA | `victory-hle/src/modules/audio.rs` | son |
+| **256 MiB DirectStorage**, `WaitOnAddress` sur les fences | `host.rs` | chargement et attentes |
+
+### 21.2 Ce que nous avons déjà mieux
+
+- Notre `VICTORY_FRAME_US` = 16 667 (60 fps) marche et est mesuré (60,0 fps
+  sur frames légères) ; eux n'ont que la correction du titre à 30 fps.
+- Notre `VICTORY_SHOW_NEW_LATER` (porté aujourd'hui, 405 reports mesurés,
+  0 perte de device) est **plus complet** que leur `SHOW_AFTER` seul.
+- Notre mémoire privée : 21-24 GB, contre **34-46 GB** chez eux : notre sweep
+  et notre `let_go_idle` font mieux, et c'est pour ça qu'ils ont besoin d'un
+  « residency » que nous n'avons pas encore.
+- Notre traducteur passe **26 084 shaders sur 26 084** ; eux en sont à
+  « 25 790 sur 25 985, les autres sont des geometry shaders inutilisés ».
+
+### 21.3 Ordre d'attaque révisé (30 fps constant, textures propres)
+
+1. **`VICTORY_INDIRECT_REST=0`** (petit, corrige le scintillement et des
+   dessins perdus).
+2. **La garde `lanes.guards[b][i]`** en élaguant les arêtes mortes
+   (`victory-shader/src/resource.rs`) : c'est le correctif des carrés noirs,
+   et il touche nos 390 refus de shaders.
+3. **`Detached::release_tables`** (slots dynamiques rendus à la fin de la
+   soumission) : dessins perdus et saccades.
+4. **La baisse de résidence** (`residency.rs`) : c'est ce qui tient la
+   mémoire et évite les `E_OUTOFMEMORY` en session longue.
+5. **`victory warm`** : pipelines d'avance.
+6. `CARD_BUFFERS_MIN_KB=64`, `UP_QUEUE`, `THIN`, `CARD_STEPS` du fork AMD.
+
+Rien n'est pris sans mesure : chaque point entre avec son interrupteur
+(`VICTORY_...`) pour pouvoir comparer dans la même scène.
