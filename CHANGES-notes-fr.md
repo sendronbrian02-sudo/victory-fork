@@ -562,3 +562,54 @@ lâcher (rien n'est orphelin), c'est de **ne pas garder 4,2 GB en mémoire du
 PC pour des copies que la carte lit** : les mettre en mémoire de la carte
 (7,7 GB libres) au-delà d'un seuil, et faire baisser ce que la copie coûte
 en place.
+
+## 20. Ce que le fork AMD (VIctory-7900XTX) a, et que Tirsos n'a pas (26/11)
+
+Source : <https://github.com/avatarmanz/VIctory-7900XTX>, commit `9576c45`
+(26/11), README + `docs/findings.md` lus, et l'historique comparé au nôtre.
+Ce n'est **pas** une autre couche : c'est le même arbre (Marvisak →
+fxceless → lui), donc le code se reprend par morceaux, pas à pas. Il n'y a
+pas de base commune exacte : leur `main` a réécrit l'histoire (un commit
+« Initial commit »), donc un `merge` est impossible ; on reprend des
+**patches**, un par un.
+
+Ce qui manque chez nous, par ordre d'importance pour une RTX 4070 :
+
+| Levier | Chez eux | Effet annoncé |
+|---|---|---|
+| `VICTORY_SHOW_NEW_LATER` (par défaut ON) | `descriptor/host.rs`, 128 lignes | une texture faite pendant que des listes déjà envoyées tournent n'est montrée qu'après : **fin des pertes de device par faute de page** (~toutes les 15-16 min) |
+| `VICTORY_UP_QUEUE` + `VICTORY_SEND_OWN` | `host/upq.rs` + `host/rec.rs`, 393 lignes | les envois montent sur une **file de copie** au lieu d'attendre la file graphique |
+| `VICTORY_CARD_STEPS` | `host/card_steps.rs`, 1 343 lignes | les remplissages qui ont besoin de la carte se font **sur la carte** (7 ms/frame chez eux) |
+| `VICTORY_THIN` | `list/thin.rs`, 913 lignes | les appels de liste sont **écrits et traduits par 8 threads** : 230 ms/frame de travail réparti |
+| `VICTORY_TEXTURE_STORE=<dossier>` | `texstore.rs`, 294 lignes | les grands niveaux d'une texture sont gardés sur disque et réinjectés : tue le **pop-in** (chez eux, 8,7 s d'attente moyenne) |
+| `VICTORY_CARD_BUFFERS_MIN_KB=64` | `shadow.rs` | les petits buffers (≥64 KiB) en mémoire carte — **notre essai en MB avait échoué, celui-là n'a pas été mesuré** |
+| `VICTORY_FRAME_INTERVAL_MS` | `apps/victory` | notre cadence **et** les trois lectures des 30 fps du titre corrigées octet par octet (nous n'avons que `VICTORY_FRAME_US`, qui ne règle que l'intervalle demandé) |
+| `VICTORY_WRITE_SITES`, `VICTORY_FILL_TITLE`, `VICTORY_SPANS_QUICK`, `VICTORY_SYNC_FINE`, `VICTORY_LANE_CORE`, `VICTORY_JOIN_BARRIERS`, `VICTORY_TEXTURE_LOOK_MS`, `VICTORY_CACHE_CORES` | divers | tous mesurés chez eux, tous absents chez nous |
+| 33 pull requests fusionnées | historique | correctifs shaders **wave32 / 32 lanes** (PR #4, #66, #82, #142) — c'est **notre cas NVIDIA**, à regarder en premier |
+
+### 20.1 Ce que la mesure dit, à nous
+
+- Nous n'avons **aucune** perte de device dans nos courses (3 min et 4 min,
+  0 `DEVICE_REMOVED`), mais nos courses sont courtes : le défaut de 15 min
+  du fork AMD ne se serait pas encore montré. `SHOW_NEW_LATER` coûte peu et
+  ferme la porte : **à prendre**.
+- Leur `findings.md` mesure le même mur que nous : **le thread qui prépare
+  une soumission** (48 ms chez eux), devant la carte (41 ms). Chez nous,
+  la frame médiane dit GPU 66 ms et préparation 58 ms : même ordre, même
+  remède — répartir la préparation (`THIN`, `ASYNC_SUBMIT`) et monter les
+  envois sur une file de copie.
+- Leur mémoire est à 35-46 GB privés, la nôtre à 21-24 GB : nous sommes
+  mieux, leur `TEXTURE_STORE` n'est donc pas une urgence pour la mémoire,
+  mais pour le **pop-in**.
+
+### 20.2 Ordre proposé
+
+1. `VICTORY_SHOW_NEW_LATER` (petit, sûr, corrige une classe entière de
+   plantages).
+2. `VICTORY_UP_QUEUE` + `VICTORY_SEND_OWN` (attaque le mur n°1 mesuré chez
+   nous : le temps d'attente de la carte).
+3. `VICTORY_CARD_BUFFERS_MIN_KB` (notre échec en MB venait de l'unité :
+   1 MB de seuil ne prenait presque rien).
+4. Les correctifs shaders des PR #4/#66/#82/#142 (wave32/32 lanes) : c'est
+   notre GPU.
+5. `THIN` et `CARD_STEPS` : gros morceaux, à faire quand 1-4 sont mesurés.
