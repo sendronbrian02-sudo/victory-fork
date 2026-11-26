@@ -66,7 +66,10 @@ pub(crate) extern "system" fn set_interval(
     // the frames themselves cost less than that.
     static MOST_US: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     let wanted = *MOST_US.get_or_init(|| {
-        std::env::var("VICTORY_FRAME_US").ok().and_then(|v| v.trim().parse::<u32>().ok()).unwrap_or(0)
+        std::env::var("VICTORY_FRAME_US")
+            .ok()
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .unwrap_or(16_667)
     });
     let interval = match wanted {
         0 => interval,

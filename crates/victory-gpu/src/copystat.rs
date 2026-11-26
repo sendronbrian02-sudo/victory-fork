@@ -680,6 +680,41 @@ fn log_memory_map() {
     );
 }
 
+/// [`log_memory`], for the frame-rate line: what the process and the layer
+/// hold, every ten seconds in every build (`VICTORY_MEMORY_MAP` decides
+/// whether the walk of the whole address space runs with it).
+pub(crate) fn log_memory_now() {
+    static SAID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let now = crate::host::now_ms();
+    let last = SAID.load(std::sync::atomic::Ordering::Relaxed);
+    if now < last + 4_000 || SAID.compare_exchange(last, now, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed).is_err() {
+        return;
+    }
+    use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    // SAFETY: our own process and a sized structure.
+    let mut c = PROCESS_MEMORY_COUNTERS {
+        cb: size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: a sized structure the call fills in.
+    unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) };
+    // SAFETY: plain data the call fills in.
+    let mut m: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    m.dwLength = size_of::<MEMORYSTATUSEX>() as u32;
+    // SAFETY: a sized structure.
+    unsafe { GlobalMemoryStatusEx(&mut m) };
+    tracing::info!(
+        "memory, the process: {} MB working set, {} MB private; the PC has {} MB free of {} MB",
+        c.WorkingSetSize >> 20,
+        c.PagefileUsage >> 20,
+        m.ullAvailPhys >> 20,
+        m.ullTotalPhys >> 20
+    );
+    log_memory();
+}
+
 /// Logs where the memory is: the process and the PC, then what this crate
 /// holds by kind (alive now), then the host buffers made since the start.
 fn log_memory() {
@@ -687,6 +722,16 @@ fn log_memory() {
     let mb = |v: u64| v as f64 / (1 << 20) as f64;
     let (working, private) = process_memory();
     let (free, left) = system_memory();
+    // The title's pages in this process, and our own allocations, in one
+    // line each ten seconds: the two that grow on a long session. What the
+    // layer itself holds is the line below.
+    tracing::info!(
+        "memory, the process: {:.0} MB working set, {:.0} MB private; the PC has {:.0} MB free of {:.0} MB",
+        mb(working),
+        mb(private),
+        mb(free),
+        mb(left)
+    );
     let copies = crate::shadow::memory();
     let staged = crate::texture::memory();
     let textures = [0, 1].map(|i| crate::resource::HOST_TEXTURES[i].load(Relaxed));
@@ -707,7 +752,12 @@ fn log_memory() {
     // sixth line; and what the shader table and the pipeline library keep.
     static LINES: AtomicU64 = AtomicU64::new(0);
     static WALKING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if memory_map() && LINES.fetch_add(1, Relaxed) % 6 == 5 && !WALKING.swap(true, Relaxed) {
+    // `VICTORY_MEMORY_MAP_ALWAYS=1`: on every line, for a run that is too
+    // short to reach the sixth (a session that ends before it).
+    static ALWAYS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let always = *ALWAYS.get_or_init(|| std::env::var_os("VICTORY_MEMORY_MAP_ALWAYS").is_some_and(|v| v == "1"));
+    let due = if always { LINES.fetch_add(1, Relaxed); true } else { LINES.fetch_add(1, Relaxed) % 6 == 5 };
+    if memory_map() && due && !WALKING.swap(true, Relaxed) {
         let walk = std::thread::Builder::new().name("victory-memory-map".into()).spawn(|| {
             log_memory_map();
             WALKING.store(false, Relaxed);

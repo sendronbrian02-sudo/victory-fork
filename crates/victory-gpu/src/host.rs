@@ -8220,7 +8220,7 @@ fn swap_buffers() -> u32 {
 /// Whether presents may tear (`VICTORY_TEARING=1`).
 fn tearing() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("VICTORY_TEARING").is_some_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var_os("VICTORY_TEARING").is_none_or(|v| v != "0"))
 }
 
 /// The flags of the swap chain, and of each present: tearing is asked for
@@ -8745,6 +8745,11 @@ impl Meter {
                 placed = crate::descriptor::host::PLACED_TEXTURE_SLOTS.load(Ordering::Relaxed),
                 objects = crate::descriptor::host::OBJECT_TEXTURE_SLOTS.load(Ordering::Relaxed)
             );
+            #[cfg(feature = "diagnostics")]
+            {
+                // What the process and the layer hold, each ten seconds.
+                crate::copystat::log_memory_now();
+            }
             #[cfg(feature = "diagnostics")]
             {
                 crate::copystat::log(std::mem::take(&mut self.copy_stats_frames) as f64);
