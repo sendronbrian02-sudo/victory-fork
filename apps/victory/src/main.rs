@@ -88,11 +88,15 @@ enum Command {
         /// With --validate, export only shaders that passed validation.
         #[arg(long, conflicts_with = "warm", value_name = "DIRECTORY")]
         export_dxil: Option<PathBuf>,
+        /// Use the local D3D12 device's shader settings instead of manual overrides.
+        #[arg(long)]
+        detect_host: bool,
         /// Warm the run's shader cache: a file of shader hashes (the 16
         /// hex digits a run's log names a shader by, anywhere in a line);
         /// the containers with those hashes are translated into the
-        /// cache and nothing else is done. Set `VICTORY_HOST_WAVE` and
-        /// `VICTORY_VIEW_LIMIT` to what the run's log says of the host.
+        /// cache and nothing else is done. Use `all` for every container.
+        /// Use --detect-host for the local GPU, or set VICTORY_HOST_WAVE
+        /// and VICTORY_VIEW_LIMIT manually.
         #[arg(long)]
         warm: Option<PathBuf>,
     },
@@ -164,15 +168,21 @@ fn main() -> Result<()> {
             list,
             jobs,
             export_dxil,
+            detect_host,
             warm,
         } => {
-            // `VICTORY_VIEW_LIMIT=<null slot>`: translate as on a host whose view heap is capped
-            if let Some(n) = std::env::var("VICTORY_VIEW_LIMIT").ok().and_then(|v| v.parse().ok()) {
-                victory_shader::emit::set_view_heap_limit(n);
-            }
-            // `VICTORY_HOST_WAVE=32`: translate as for a GPU whose waves are at most 32 lanes
-            if let Some(n) = std::env::var("VICTORY_HOST_WAVE").ok().and_then(|v| v.parse().ok()) {
-                victory_shader::emit::set_host_max_wave(n);
+            if detect_host {
+                victory_hle::modules::d3d12x::detect_shader_host().map_err(anyhow::Error::msg)?;
+            } else {
+                let setting = |name| std::env::var(name).ok().and_then(|v| v.parse::<u32>().ok());
+                if let Some(n) = setting("VICTORY_VIEW_LIMIT") {
+                    victory_shader::emit::set_view_heap_limit(n);
+                }
+                // The batch also accepts the older MAX spelling, which took precedence.
+                let wave = if warm.is_none() { setting("VICTORY_HOST_MAX_WAVE") } else { None };
+                if let Some(n) = wave.or_else(|| setting("VICTORY_HOST_WAVE")) {
+                    victory_shader::emit::set_host_max_wave(n);
+                }
             }
             if let Some(file) = warm {
                 return translate::warm(paths, &file, jobs);

@@ -49,6 +49,16 @@ pub fn warm_shader(container: &[u8]) -> Result<bool, String> {
     }
 }
 
+/// The translator settings the local game process will discover at startup.
+pub fn detect_shader_host() -> Result<(), &'static str> {
+    #[cfg(windows)]
+    {
+        victory_gpu::detect_shader_host()
+    }
+    #[cfg(not(windows))]
+    Err("detecting the D3D12 shader host requires Windows")
+}
+
 /// Keeps the host's translations of the title's shaders in `dir` (a
 /// folder of the cache) across runs, and its compiled pipelines beside it
 /// (`pipelines`).

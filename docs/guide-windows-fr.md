@@ -4,44 +4,60 @@
 
 VIctory compile la couche de compatibilité. Il lance l'exécutable du jeu que tu fournis, charge ses ressources depuis son dossier et traduit les shaders pour Direct3D 12. Garde le dossier complet du jeu, les caches et les exports en dehors de tous les dossiers source VIctory.
 
-## Compiler et lancer
+<!-- coderabbit-ai-generated:v1 -->
 
-Prérequis : Windows 10/11 x64, processeur AVX2, carte Direct3D 12 avec Shader Model 6.6 et mesh shaders, Rust via rustup et les outils MSVC C++ x64 avec le SDK Windows. Le dépôt sélectionne la version de Rust.
+<!-- coderabbit-ai-generated-section:v1:b7726afd42feb1d78e762f78758a9ba569073b0d47de709d47cb8731635c7a7c -->
 
-Depuis PowerShell :
+## Préparer et lancer depuis CMD
 
-```powershell
-Set-Location 'C:\Users\sendr\Desktop\victory-fork'
+Ouvre **Invite de commandes** (`cmd.exe`). Avec le ZIP Windows, place-toi dans le dossier extrait qui contient `victory.cmd` ; les deux exécutables sont déjà compilés. Avec un clone Git, installe Rust via rustup et les outils MSVC C++ x64 avec le SDK Windows, puis compile les exécutables dans ce dossier :
+
+```cmd
+cd /d "C:\Users\sendr\Desktop\victory-fork"
 rustup toolchain install
-cargo build --release --locked -p victory
-cargo build --profile diag --locked -p victory --features diagnostics
-
-$jeu = 'D:\MonDump\MonJeu.exe' # remplace par le chemin de ton exécutable Xbox
-$env:VICTORY_GAME_DIR = Split-Path -LiteralPath $jeu
-& .\target\release\victory.exe config
-& .\target\release\victory.exe run $jeu --execute --console series-x
+victory.cmd build
+victory.cmd build diag
 ```
+
+Remplace le chemin ci-dessous par **l'exécutable Xbox** situé dans ton dossier complet du jeu, à côté de ses données. Dans le même CMD :
+
+```cmd
+set "JEU=D:\MonDump\MonJeu.exe"
+victory.cmd check "%JEU%"
+victory.cmd warm "%JEU%"
+victory.cmd play "%JEU%"
+```
+
+`check` prépare l'exécutable et affiche ses imports sans le lancer. `warm` est facultatif : il détecte les réglages D3D12 du PC et prépare des shaders dans le cache local. Il cesse de parcourir les fichiers au bout de cinq minutes par défaut ; une lecture ou traduction déjà commencée peut finir après le délai. Pour modifier le délai : `set "VICTORY_WARM_SECONDS=600"`. Le jeu traduit encore ce que le scanner n'a pas trouvé et son pilote prépare des pipelines lors des premiers lancements.
+
+`play` utilise Series X par défaut. Pour un essai séparé en Series S, lance `victory.cmd play "%JEU%" series-s`. Garde le même mode et les mêmes réglages quand tu compares les performances.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Exporter sur le PC
 
-Les commandes suivantes utilisent les fichiers que tu fournis et écrivent sous `%LOCALAPPDATA%\victory\exports`.
+<!-- coderabbit-ai-generated:v1 -->
 
-```powershell
-$exports = Join-Path $env:LOCALAPPDATA 'victory\exports'
-$shaders = Join-Path $exports 'shaders'
-$env:VICTORY_HOST_WAVE = '32' # pour reproduire la largeur de vague d'une carte NVIDIA
-& .\target\release\victory.exe translate $env:VICTORY_GAME_DIR --export-dxil $shaders
-Remove-Item Env:VICTORY_HOST_WAVE
+<!-- coderabbit-ai-generated-section:v1:73f784f8484b8e7aa3b7bdcfd310f872e3b4e88b4fabd7da3913e0e462b9c45e -->
 
-$env:VICTORY_TEXTURE_DUMP = Join-Path $exports 'textures'
-$env:VICTORY_AUDIO_CAPTURE = Join-Path $exports 'jeu.wav'
-& .\target\diag\victory.exe run $jeu --execute --console series-x
-Remove-Item Env:VICTORY_TEXTURE_DUMP, Env:VICTORY_AUDIO_CAPTURE
+Les commandes suivantes utilisent les fichiers que tu fournis et écrivent sous `%LOCALAPPDATA%\victory\exports`. `capture` demande la version diagnostic.
+
+```cmd
+victory.cmd shaders "%JEU%"
+victory.cmd capture "%JEU%"
 ```
 
-- **Shaders :** les shaders que le scanner trouve et que VIctory arrive à traduire sont exportés en DXIL. Le hash dans leur nom identifie le contenu. Le résumé indique les échecs de traduction. Ajoute `--validate` pour exporter seulement les shaders acceptés par le validateur DXIL du SDK Windows.
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:632d86059148a7c93988be09563972e03561a39216a43a02a5533b359b1115f1 -->
+
+- **Shaders :** les shaders que le scanner trouve et que VIctory arrive à traduire sont exportés en DXIL. Le hash dans leur nom identifie le contenu. Le résumé indique les échecs de traduction. Le validateur du SDK Windows est disponible en appelant directement `target\release\victory.exe translate "D:\MonDump" --detect-host --validate --export-dxil "%LOCALAPPDATA%\victory\exports\shaders"`.
 - **Textures :** la version diagnostic enregistre des captures DDS de textures 2D couleur et BC détilées pendant la partie. Un fichier contient un niveau ; le niveau 0 est la résolution maximale. Les nouvelles captures sont limitées à 256 fichiers par lancement et à 16 Mio par fichier. Les tableaux, cubes, volumes, formats vidéo, textures générées uniquement côté GPU et textures que le jeu ne charge pas pendant la partie restent hors de cette capture. Règle `VICTORY_TEXTURE_DUMP_AFTER_FRAME` pour commencer plus tard si les menus remplissent le quota. Le seuil s'applique aux textures détilées à partir de cette image.
-- **Audio :** le WAV contient le mix joué par le processus. Quitte normalement pour que l'enregistreur finalise le fichier. Change le nom entre deux captures à conserver.
+- **Audio :** le WAV contient le mix joué par le processus. Quitte normalement pour que l'enregistreur finalise le fichier. Chaque lancement de `capture` choisit un nouveau nom de fichier WAV.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Cette procédure ne reconstruit pas un inventaire complet des archives du jeu et ne conserve pas leurs noms de fichiers d'origine.
 
@@ -61,14 +77,18 @@ Le bornage hors liste (`VICTORY_HOIST_CLAMPS`) a été retiré. Il réutilisait 
 
 Fais chauffer les caches pour chaque version. Repars de la même sauvegarde et joue au moins une minute sur le même trajet, avec les mêmes réglages de console, de résolution et d'éclairage. Teste au moins une scène chargée. Coupe les exports et les captures pendant la mesure.
 
-```powershell
-$logDir = Join-Path $env:LOCALAPPDATA 'victory\bench'
-New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-$env:VICTORY_FRAME_LOG = '1'
-& .\target\release\victory.exe run $jeu --execute --console series-x 2>&1 |
-    Tee-Object -FilePath (Join-Path $logDir 'fork.log')
-Remove-Item Env:VICTORY_FRAME_LOG
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:36a98fbf236d3db59d2b4ea5e8254b3229b7ff46ca26fd248345dc22ce4b6434 -->
+
+```cmd
+victory.cmd bench "%JEU%"
+findstr /c:"frame times:" "%LOCALAPPDATA%\victory\bench\fork.log"
 ```
+
+Le lanceur écrit la sortie dans `fork.log` et remplace ce fichier à chaque mesure. Renomme-le si tu veux comparer deux exécutions. Joue dans le prologue avec les captures coupées ; le mode `bench` les désactive pour cette exécution.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Dans les lignes `frame times:`, compare le **p99** (temps en dessous duquel passent environ 99 % des images) et le compteur `over 33.33 ms`. Pour des 30 FPS stables, il faut que la scène respecte ce budget sur la durée. Les menus et les premières compilations de pipelines se mesurent séparément. Un plafond à 30 FPS ne réduit pas le temps de rendu d'une image.
 

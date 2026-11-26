@@ -81,3 +81,12 @@ pub use watch::{
     title_memory_reading, title_memory_remapped, title_memory_remapping, title_memory_written,
     writing as kernel_will_write,
 };
+
+/// Set the translator's wave width and descriptor limit the same way a
+/// title launch does, without loading the title or making its pipelines.
+#[cfg(windows)]
+pub fn detect_shader_host() -> Result<(), &'static str> {
+    host::host().ok_or("no D3D12 device; cannot detect the host's shader settings")?;
+    descriptor::host::probe_view_limit();
+    Ok(())
+}
