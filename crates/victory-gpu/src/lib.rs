@@ -24,6 +24,10 @@ mod cardmeter;
 pub mod console;
 #[cfg(all(windows, feature = "diagnostics"))]
 mod copystat;
+// Host-memory admission (carlm125/cool_fox `f4b48ad`, the build measured on
+// an RTX 5090): how much of what is left may speculative texture work and
+// reusable upload storage take. It carries no code of its own from the title.
+mod residency;
 pub mod descriptor;
 pub mod device;
 #[cfg(windows)]
