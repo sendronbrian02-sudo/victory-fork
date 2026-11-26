@@ -735,3 +735,71 @@ ressource, stats mémoire) : leurs fichiers ne les contiennent pas. La façon
 sûre de tout récupérer est donc **fichier par fichier, avec une mesure
 après chacun**, en commençant par `residency.rs` (le plus autonome et le
 plus utile pour la RAM).
+
+## 25. Peppacodes/playablegames-peppa : le fork d'un PC identique au tien (26/11)
+
+C'est le fork **le plus proche de ta machine** : Windows 11, **RTX 5080 16 GB**
+(driver 621.24), Ryzen 7 5700X3D, **32 GB de RAM**, 1080p, profil Series X.
+Son objectif annoncé : 40 ms par frame (25 fps) en extérieur.
+
+### 25.1 Ce qu'il vaut vraiment
+
+Mesuré entre son dernier commit et cool_fox : **5 fichiers, 101 lignes**. Ce
+n'est pas un arbre nouveau, c'est cool_fox plus trois petites choses
+(`VICTORY_NO_WATCHDOG=1`, piles de 64 MB pour les workers de pipelines,
+correctif du plan double Series S). Les 3 255 lignes qui nous manquaient
+viennent du gros merge `acfd2bb`.
+
+### 25.2 Ses réglages gagnants (`Play-VIctory.cmd`)
+
+`VICTORY_JOIN_PARTS=8`, `VICTORY_CARD_BUFFERS_MIN_KB=64`, `VICTORY_THIN=1`,
+`VICTORY_RELAY=2`, `VICTORY_RELAY_COPY=1`, `VICTORY_WIDE_BACK=1`,
+`VICTORY_CARD_REHASH_RUNS=1`, `VICTORY_JOIN_COPIES=1`,
+`VICTORY_INDIRECT_WINDOW=1`, `VICTORY_INDIRECT_BATCH=2`,
+`VICTORY_CARD_STEPS=2`, `VICTORY_MAP_THREADS=1`, `VICTORY_CARD_AWAKE=1`,
+`VICTORY_SHOW_AFTER=1`, `VICTORY_AMBIENT=0.8`, `VICTORY_AMBIENT_AIR=1.5`,
+`VICTORY_UPLOAD_AHEAD=1`, `VICTORY_LEVELS_ON_DEMAND=1`,
+`VICTORY_TEXTURE_NO_WAIT=1`, `VICTORY_LOG=warn`.
+
+Chez nous existent déjà : `RELAY`, `WIDE_BACK`, `CARD_REHASH_RUNS`,
+`JOIN_COPIES`, `INDIRECT_WINDOW`, `AMBIENT`, `JOIN_PARTS`, `TEXTURE_NO_WAIT`,
+`NO_WATCHDOG`, `LEVELS_ON_DEMAND`. **Manquent** (et leurs modules aussi) :
+`THIN`, `CARD_STEPS`, `UPLOAD_AHEAD`, `SHOW_AFTER`, `RELAY_COPY`,
+`INDIRECT_BATCH`, `MAP_THREADS`, `CARD_AWAKE`, `AMBIENT_AIR`,
+`CARD_BUFFERS_MIN_KB`.
+
+### 25.3 Mesuré chez nous
+
+| Run | Médiane | RAM (4 min) |
+|---|---|---|
+| nos réglages + résidence | **30,0** | +14 357 MB |
+| réglages Peppa | **3,1** | +19 691 MB |
+
+Les réglages de Peppa **ne se transposent pas** : `VICTORY_THIN` et
+`CARD_STEPS` n'existent pas chez nous, et `JOIN_PARTS=8` sur notre arbre
+donne 3,1 fps. Ce n'est pas une question de valeur mais de modules : chez
+eux, ces leviers sont accompagnés de 3 255 lignes qui les font marcher.
+
+### 25.4 Porté et poussé
+
+- **`residency.rs`** (201 lignes, tel quel) + `host::coarse_ms()` +
+  `residency::refresh()` dans le sweep d'une seconde. C'est la brique qui
+  fait décider à la mémoire de l'hôte ce que la prélecture, l'upload-ahead
+  et le staging peuvent prendre. Médiane inchangée (30,0), 3 avis de
+  pression émis. Les **points d'admission** dans `draw.rs`, `texture.rs`,
+  `pool.rs`, `pipeline/make.rs` sont l'étape suivante (c'est là que la RAM
+  baisse).
+
+### 25.5 Pour un vrai « mon fork complet », ce qu'il reste à porter
+
+72 modules absents, **37 523 lignes** : `list/thin.rs` (912),
+`host/card_steps.rs` (1 334), `land.rs` (695), `compose.rs` (325),
+`residency.rs` (201, fait), `pool.rs`, `host/` (13 modules),
+`indirect/batch.rs`, `apps/victory/src/warm.rs`, `replay.rs`... Un
+remplacement en bloc effacerait nos 24 correctifs (60 fps, `SHOW_NEW_LATER`,
+garde des lanes, `INDIRECT_REST`, fence par ressource, stats mémoire). Le
+plan sûr : un module à la fois, compilé et mesuré, dans cet ordre :
+1. points d'admission de `residency` (RAM),
+2. `pool.rs` + `texture/ahead.rs` (upload-ahead, staging borné),
+3. `host/card_steps.rs` (fills sur la carte) + `CARD_BUFFERS_MIN_KB`,
+4. `list/thin.rs` (enregistrement léger) — le plus gros gain CPU, le plus long.
