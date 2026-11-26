@@ -2103,6 +2103,20 @@ impl HostHeap {
             if self.made.lock().unwrap_or_else(|e| e.into_inner())[index as usize] != claim {
                 return Some(view);
             }
+            // A texture made while submissions begun before it may still
+            // run: they read this slot by index, and must not find it
+            // ([`show_new_later`]). The slot shows what it showed (or a
+            // null view), and the new view is made on a later frame, when
+            // every submission begun before the texture has finished.
+            if !later && !self.sampler && show_new_later() && is_texture_view(&view) && begun_before(&view).is_some() {
+                null_for(&view, self.cpu(index));
+                self.keep(index, None);
+                let mut due = self.made.lock().unwrap_or_else(|e| e.into_inner());
+                due[index as usize] = claim;
+                drop(due);
+                NEW_LATER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return Some(view);
+            }
             let kept = if later { None } else { make(&view, self.cpu(index)) };
             if kept.is_none() && !self.sampler {
                 null_for(&view, self.cpu(index));
@@ -2817,6 +2831,25 @@ fn twin_uav(
 static KEPT_FOR_COPY: [std::sync::atomic::AtomicU64; 2] =
     [const { std::sync::atomic::AtomicU64::new(0) }; 2];
 
+/// Whether a title slot shows a texture made while submissions begun
+/// before it may still run only once those have finished (`VICTORY_SHOW_NEW_LATER`,
+/// on; 0: at once, as before).
+///
+/// The host's submissions read slots by index, and a slot changed while
+/// they are in the air shows them a texture whose first byte is being made
+/// that millisecond: a GPU page fault, and the device goes. The fork on an
+/// RX 7900 XTX (avatarmanz/VIctory-7900XTX, `c4cd2d13` and `cf9ba08`) found
+/// three device losses this way, all page faults in a texture made in the
+/// last tenth of a second, its slot changed while lists sent before read
+/// that slot by index.
+pub(crate) fn show_new_later() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_SHOW_NEW_LATER").is_none_or(|v| v != "0"))
+}
+
+/// Slots held back by [`show_new_later`] since the start.
+pub(crate) static NEW_LATER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn make(view: &View, at: D3D12_CPU_DESCRIPTOR_HANDLE) -> Option<Kept> {
     // A slot is the reason a title texture's host copy is made at all: the
     // memory line tells the two apart (`crate::host::in_slot_make`).
@@ -3070,6 +3103,28 @@ pub(crate) fn placed_texture(view: &View) -> Option<View> {
     let address = u64::from(desc[10]) | u64::from(desc[11]) << 32;
     let texture = crate::resource::texture_at(address, resource)?;
     Some(View::Shader(texture as usize, desc[..10].try_into().ok()))
+}
+
+/// The submission number `view`'s texture was made under, if a submission
+/// begun before that may still run ([`crate::host::retire`]'s rule).
+///
+/// The texture is made here if it is not yet (as [`make`] would). The
+/// number is the one the texture's host resource was made under
+/// (`crate::resource::host_resource_made_at`), compared with how far the
+/// host has come: past it, every submission that could have read the slot
+/// has finished, and the slot may show the texture.
+fn begun_before(view: &View) -> Option<u64> {
+    let shader = match view {
+        View::Placed(false, resource, _) if resource[0] != 1 => placed_texture(view)?,
+        View::Shader(..) => view.clone(),
+        _ => return None,
+    };
+    let View::Shader(resource, _) = shader else {
+        return None;
+    };
+    let at = crate::resource::host_resource_made_at(resource as crate::object::This)?;
+    let (_, finished) = crate::host::submissions();
+    (at > finished).then_some(at)
 }
 
 /// A null view of the kind `view` is, for a slot whose view the host

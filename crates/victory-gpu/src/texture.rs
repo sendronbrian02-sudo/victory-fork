@@ -646,8 +646,8 @@ static HOST_WRITTEN: Mutex<Option<std::collections::HashSet<usize>>> = Mutex::ne
 
 /// Why a texture skipped its upload, for the memory line: `host_written`
 /// and the other case, each with how many and their widths (a poor man's
-/// size: enough to tell the two apart).
-#[cfg(all(windows, feature = "diagnostics"))]
+/// size: enough to tell the two apart). Kept in every build: the shortcut
+/// below counts it, and a test build has no diagnostics.
 pub(crate) static NEVER: [[std::sync::atomic::AtomicU64; 2]; 2] =
     [const { [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)] }; 2];
 

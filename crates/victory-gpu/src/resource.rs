@@ -384,9 +384,25 @@ pub(crate) static PLANES: [std::sync::atomic::AtomicU64; 3] =
 /// there have been, and their bytes.
 static OTHER_MADE: [std::sync::atomic::AtomicU64; 3] = [const { std::sync::atomic::AtomicU64::new(0) }; 3];
 
+/// The submission number the host copy of title texture `this` was made
+/// under (0: it has none yet, or it was made before the host started
+/// counting): a submission begun after it may still read the slot that
+/// shows it.
+#[cfg(windows)]
+pub(crate) fn host_resource_made_at(this: This) -> Option<u64> {
+    if this.is_null() {
+        return None;
+    }
+    let r = resource(this);
+    let made = r.host.made.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, _) = made.as_ref()?;
+    let _ = host;
+    Some(host.made_at)
+}
+
 /// The bytes a host resource of ours holds, by its description (for the
 /// memory line: what a slot that still shows an old view keeps alive).
-#[cfg(all(windows, feature = "diagnostics"))]
+#[cfg(windows)]
 pub(crate) fn host_bytes_of(resource: &windows::Win32::Graphics::Direct3D12::ID3D12Resource) -> u64 {
     // SAFETY: a live resource, read as the description's own words (the
     // two structures have the same layout, 56 bytes).
@@ -1147,6 +1163,11 @@ pub(crate) struct HostTexture {
     /// levels have been given. Its `bytes` are 0: what it holds of the card
     /// is counted there.
     pub(crate) tiled: Option<crate::tiles::Tiled>,
+    /// The submission the host started when this copy was made
+    /// (`crate::host::submissions`): a submission begun before it may still
+    /// read the slot that shows it, and is given a null view until it has
+    /// finished (`crate::descriptor::host::show_new_later`).
+    pub(crate) made_at: u64,
 }
 
 /// What a title texture has on the host: its host copy and, for a depth
@@ -2014,6 +2035,7 @@ impl HostTexture {
         HOST_TEXTURES[0].fetch_add(1, Relaxed);
         HOST_TEXTURES[1].fetch_add(bytes, Relaxed);
         HostTexture {
+            made_at: crate::host::submissions().0,
             texture,
             state: std::sync::atomic::AtomicU32::new(state),
             bytes,
@@ -2031,6 +2053,7 @@ impl HostTexture {
     ) -> HostTexture {
         HOST_TEXTURES[0].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         HostTexture {
+            made_at: crate::host::submissions().0,
             texture,
             state: std::sync::atomic::AtomicU32::new(state),
             bytes: 0,

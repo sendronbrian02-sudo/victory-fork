@@ -814,6 +814,15 @@ fn log_memory() {
             );
         }
     }
+    {
+        let n = crate::descriptor::host::NEW_LATER.swap(0, std::sync::atomic::Ordering::Relaxed);
+        if n > 0 {
+            tracing::info!(
+                "slots shown a null view while their texture was made under a submission still in the air \
+                 (VICTORY_SHOW_NEW_LATER): {n} since the last line"
+            );
+        }
+    }
     let targets = crate::resource::targets_census();
     tracing::info!(
         "host copies the sweep never lets go: {} the host renders to or writes {:.0} MB ({} of them placed {:.0} MB);          of them {} have title memory that is not mapped now {:.0} MB, {} were not used for 30 s and are held by no          list and no slot {:.0} MB, {} are both {:.0} MB; still kept by {} used in the last 30 s {:.0} MB, {} named by          another of our references {:.0} MB, {} referenced by the card {:.0} MB; and {} copies of textures the title fills that the host          copied into {:.0} MB",

@@ -207,6 +207,13 @@ fn sweep() {
     crate::resource::let_go_idle();
 }
 
+/// How many submissions the host has started and how many it knows
+/// finished: a submission started after a number is one that may still
+/// read what was written under it (`crate::descriptor::host::show_new_later`).
+pub(crate) fn submissions() -> (u64, u64) {
+    (STARTED.load(Ordering::Acquire), FINISHED.load(Ordering::Acquire))
+}
+
 /// Drops `object` once every submission running now has finished: at once
 /// if none is.
 pub(crate) fn retire<T: 'static>(object: T) {
